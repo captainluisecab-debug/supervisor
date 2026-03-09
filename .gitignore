@@ -1,0 +1,9 @@
+.env
+*.env
+supervisor_report.json
+supervisor_history.jsonl
+logs/
+*.log
+__pycache__/
+*.pyc
+EMERGENCY_STOP.txt
