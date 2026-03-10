@@ -36,6 +36,7 @@ from supervisor_correlation import (
 from supervisor_news import fetch_news, format_news_for_prompt
 from supervisor_calendar import get_calendar, format_calendar_for_prompt
 from supervisor_social import fetch_social, format_social_for_prompt
+from supervisor_execution import read_recent_executions, format_executions_for_prompt
 
 log = logging.getLogger("supervisor_brain")
 
@@ -90,6 +91,10 @@ def _build_prompt(portfolio, regime, history_tail: list,
 
     # Social sentiment
     social_text   = format_social_for_prompt(social_snap) if social_snap else "  unavailable"
+
+    # Recent executions across all bots
+    recent_execs  = read_recent_executions(20)
+    exec_text     = format_executions_for_prompt(recent_execs)
 
     prompt = f"""You are the unified trading brain for a 3-sleeve autonomous trading ecosystem.
 Your job: analyze all three bots together and assign each one an operating mode and size multiplier.
@@ -177,6 +182,11 @@ CROSS-ASSET CORRELATION (BTC vs SPY)
 ALLOCATION ENGINE (Sharpe + Kelly Criterion)
 ═══════════════════════════════════════════════════
 {alloc_text}
+
+═══════════════════════════════════════════════════
+RECENT EXECUTIONS (last 10 across all bots)
+═══════════════════════════════════════════════════
+{exec_text}
 
 ═══════════════════════════════════════════════════
 YOUR TASK
