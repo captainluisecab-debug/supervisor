@@ -74,6 +74,7 @@ def read_enzobot() -> SleeveState:
     pos_value = sum(
         float(p.get("qty", 0)) * float(p.get("last_price", p.get("avg_price", 0)))
         for p in pos.values()
+        if float(p.get("qty", 0)) > 0
     ) if isinstance(pos, dict) else 0.0
     equity = cash + pos_value if pos_value > 0 else cash
 
@@ -87,7 +88,7 @@ def read_enzobot() -> SleeveState:
     dd_pct   = float(state.get("drawdown_pct", 0))
     mode     = brain.get("active_mode", "UNKNOWN")
     cycle    = brain.get("cycle", state.get("cycle", 0))
-    open_ct  = len(pos) if isinstance(pos, dict) else 0
+    open_ct  = sum(1 for p in pos.values() if float(p.get("qty", 0)) > 0) if isinstance(pos, dict) else 0
 
     notes = []
     if mode == "DEFEND":
