@@ -7,3 +7,13 @@ logs/
 __pycache__/
 *.pyc
 EMERGENCY_STOP.txt
+brain_outcomes.jsonl
+brain_pending.json
+commands/
+hashrate_cache.json
+morning_brief.txt
+morning_brief_last.json
+morning_briefs.jsonl
+execution_log.jsonl
+*_cache.json
+*_overrides.json
