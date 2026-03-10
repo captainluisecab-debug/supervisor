@@ -613,10 +613,25 @@ def build_bot_stats_enzo(exec_entries: List[dict]) -> BotStats:
         losses   = losses_from_daily
         win_pnl  = []
         loss_pnl = []
-        # Derive drawdown from enzobot's equity_peak vs current cash
-        peak   = enzo_state["equity_peak"]
-        cash   = enzo_state["cash"]
-        max_dd = max(0.0, (peak - cash) / peak) if peak > 0 else 0.0
+        # Derive drawdown from enzobot's daily_report (net equity, not cash-only)
+        # cash-only vs peak overstates DD because open positions have value
+        # Use daily_report net_pnl to estimate real equity trend instead
+        try:
+            dr_path = os.path.join(r"C:\Projects\enzobot", "data", "daily_report.json")
+            with open(dr_path, encoding="utf-8") as _f:
+                dr = json.load(_f)
+            running = enzo_state.get("equity_peak", 4000.0)
+            worst = running
+            for _day in sorted(dr.keys()):
+                running += dr[_day].get("net_pnl_usd", 0.0)
+                if running < worst:
+                    worst = running
+            peak = enzo_state.get("equity_peak", 4000.0)
+            max_dd = max(0.0, (peak - worst) / peak) if peak > 0 else 0.0
+        except Exception:
+            peak   = enzo_state["equity_peak"]
+            cash   = enzo_state["cash"]
+            max_dd = max(0.0, (peak - cash) / peak) if peak > 0 else 0.0
 
     return BotStats(
         name="ENZOBOT", label="Kraken",
