@@ -594,6 +594,17 @@ def build_bot_stats_enzo(exec_entries: List[dict]) -> BotStats:
     # Build daily_pnl from enzobot's own daily_report
     daily_pnl: Dict[str, float] = {d: v["net_pnl_usd"] for d, v in enzo_daily.items()}
 
+    # Add USDG yield to effective daily PnL (Kraken+ 4.25% APR on idle cash)
+    usdg_apr = 0.0425
+    try:
+        with open(ENZO_STATE) as _f:
+            enzo_cash = json.load(_f).get("cash", 0.0)
+        daily_yield = float(enzo_cash) * usdg_apr / 365
+        for _date in list(daily_pnl.keys()):
+            daily_pnl[_date] = daily_pnl.get(_date, 0) + daily_yield
+    except Exception:
+        pass
+
     # Total trades from daily_report (most accurate source for enzobot)
     total_from_daily = sum(v["trades"] for v in enzo_daily.values())
     wins_from_daily  = sum(v["wins"]   for v in enzo_daily.values())
