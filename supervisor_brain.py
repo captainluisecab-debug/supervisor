@@ -33,6 +33,9 @@ from supervisor_signals import get_sentiment_signals, format_signals_for_prompt
 from supervisor_correlation import (
     check_correlation, format_correlation_for_prompt, apply_correlation_cap,
 )
+from supervisor_news import fetch_news, format_news_for_prompt
+from supervisor_calendar import get_calendar, format_calendar_for_prompt
+from supervisor_social import fetch_social, format_social_for_prompt
 
 log = logging.getLogger("supervisor_brain")
 
@@ -58,7 +61,8 @@ class BrainDecision:
 # ── Prompt builder ───────────────────────────────────────────────────
 
 def _build_prompt(portfolio, regime, history_tail: list,
-                  corr_snap=None, sentiment_snap=None) -> str:
+                  corr_snap=None, sentiment_snap=None,
+                  news_snap=None, calendar_snap=None, social_snap=None) -> str:
     sleeves = portfolio.sleeves
     k = sleeves.get("kraken_crypto")
     s = sleeves.get("sfm_tactical")
@@ -73,10 +77,19 @@ def _build_prompt(portfolio, regime, history_tail: list,
     alloc_text   = format_allocations_for_prompt(allocations)
 
     # Sentiment + on-chain signals (passed in from run_brain to avoid double fetch)
-    signal_text = format_signals_for_prompt(sentiment_snap) if sentiment_snap else "  unavailable"
+    signal_text   = format_signals_for_prompt(sentiment_snap) if sentiment_snap else "  unavailable"
 
     # Correlation collapse detection (passed in from run_brain)
-    corr_text = format_correlation_for_prompt(corr_snap) if corr_snap else "  unavailable"
+    corr_text     = format_correlation_for_prompt(corr_snap) if corr_snap else "  unavailable"
+
+    # News headlines
+    news_text     = format_news_for_prompt(news_snap) if news_snap else "  unavailable"
+
+    # Economic calendar
+    calendar_text = format_calendar_for_prompt(calendar_snap) if calendar_snap else "  unavailable"
+
+    # Social sentiment
+    social_text   = format_social_for_prompt(social_snap) if social_snap else "  unavailable"
 
     prompt = f"""You are the unified trading brain for a 3-sleeve autonomous trading ecosystem.
 Your job: analyze all three bots together and assign each one an operating mode and size multiplier.
@@ -134,6 +147,21 @@ SLEEVE STATUS
 OUTCOME MEMORY (scored decisions — learn from these)
 ═══════════════════════════════════════════════════
 {outcome_text}
+
+═══════════════════════════════════════════════════
+BREAKING NEWS & MARKET HEADLINES
+═══════════════════════════════════════════════════
+{news_text}
+
+═══════════════════════════════════════════════════
+ECONOMIC CALENDAR (high-impact events)
+═══════════════════════════════════════════════════
+{calendar_text}
+
+═══════════════════════════════════════════════════
+SOCIAL SENTIMENT (Stocktwits crowd)
+═══════════════════════════════════════════════════
+{social_text}
 
 ═══════════════════════════════════════════════════
 SENTIMENT & ON-CHAIN SIGNALS
@@ -303,12 +331,17 @@ def run_brain(portfolio, regime, history_tail: list) -> BrainDecision:
             outcome.overall_verdict, outcome.total_chg_pct,
         )
 
-    # Fetch signals once — passed to prompt builder and used for size cap enforcement
+    # Fetch all intelligence signals once — passed to prompt builder
     corr_snap      = check_correlation()
     sentiment_snap = get_sentiment_signals()
+    news_snap      = fetch_news()
+    calendar_snap  = get_calendar()
+    social_snap    = fetch_social()
 
     prompt = _build_prompt(portfolio, regime, history_tail,
-                           corr_snap=corr_snap, sentiment_snap=sentiment_snap)
+                           corr_snap=corr_snap, sentiment_snap=sentiment_snap,
+                           news_snap=news_snap, calendar_snap=calendar_snap,
+                           social_snap=social_snap)
     log.info("[BRAIN] Calling Claude for unified portfolio decision...")
 
     raw = _call_claude(prompt)

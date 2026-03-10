@@ -46,6 +46,37 @@ from supervisor_memory import load_recent_outcomes
 from supervisor_morning_brief import should_fire, fire_morning_brief
 from supervisor_signals import get_sentiment_signals
 from supervisor_correlation import check_correlation
+from supervisor_calendar import get_calendar
+
+
+def _dynamic_brain_interval(regime, portfolio) -> int:
+    """
+    Compute how frequently Claude should fire based on current conditions.
+
+    Normal market:        every 6 cycles = ~30 min (BRAIN_INTERVAL_CYCLES)
+    Elevated volatility:  every 3 cycles = ~15 min
+    High stress:          every 2 cycles = ~10 min
+    Crisis / FOMC day:    every cycle    = ~5 min
+
+    This ensures Claude responds faster when markets are moving fast.
+    """
+    vix = getattr(regime, "vix", 0.0)
+    dd  = portfolio.total_dd_pct
+
+    # Crisis conditions — fire every cycle
+    if dd < -8.0 or vix > 35:
+        return 1
+
+    # High stress — fire every 2 cycles
+    if dd < -5.0 or vix > 28:
+        return 2
+
+    # Elevated — fire every 3 cycles
+    if dd < -3.0 or vix > 23:
+        return 3
+
+    # Normal
+    return BRAIN_INTERVAL_CYCLES
 
 
 def _load_peak() -> float:
@@ -104,16 +135,26 @@ def _run_cycle(cycle: int, peak_equity: float) -> float:
 
     # 3. Morning pre-market brief — once per weekday at 9 AM ET
     if should_fire():
+        from supervisor_news import fetch_news
+        from supervisor_social import fetch_social
         allocations     = compute_allocations()
         recent_outcomes = load_recent_outcomes(8)
         sentiment       = get_sentiment_signals()
         correlation     = check_correlation()
+        news            = fetch_news()
+        calendar        = get_calendar()
+        social          = fetch_social()
         fire_morning_brief(portfolio, regime, allocations, recent_outcomes,
-                           sentiment=sentiment, correlation=correlation)
+                           sentiment=sentiment, correlation=correlation,
+                           news=news, calendar=calendar, social=social)
 
-    # 4. Claude unified brain — every BRAIN_INTERVAL_CYCLES
+    # 4. Claude unified brain — dynamic interval based on market conditions
+    brain_interval = _dynamic_brain_interval(regime, portfolio)
+    if brain_interval != BRAIN_INTERVAL_CYCLES:
+        log.info("Dynamic brain interval: every %d cycles (~%dm) [stress mode]",
+                 brain_interval, brain_interval * CYCLE_SEC // 60)
 
-    if cycle % BRAIN_INTERVAL_CYCLES == 1:
+    if cycle % brain_interval == 1:
         history = _load_history_tail(3)
         decision = run_brain(portfolio, regime, history)
         log.info(
@@ -124,8 +165,9 @@ def _run_cycle(cycle: int, peak_equity: float) -> float:
         )
         log.info("[BRAIN] %s", decision.portfolio_note)
     else:
-        next_brain = BRAIN_INTERVAL_CYCLES - (cycle % BRAIN_INTERVAL_CYCLES) + 1
-        log.info("Brain update in %d cycles", next_brain)
+        next_brain = brain_interval - (cycle % brain_interval)
+        log.info("Brain update in %d cycles (~%dm) [interval=%d]",
+                 next_brain, next_brain * CYCLE_SEC // 60, brain_interval)
 
     # 5. Report
     report = build_report(portfolio, regime, cycle, new_peak)

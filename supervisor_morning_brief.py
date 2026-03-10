@@ -107,7 +107,8 @@ def _bar(label: str, width: int = 60) -> str:
 
 
 def generate_brief(portfolio, regime, allocations, recent_outcomes,
-                   sentiment=None, correlation=None) -> str:
+                   sentiment=None, correlation=None,
+                   news=None, calendar=None, social=None) -> str:
     """
     Build the full morning brief as a plain-text string.
     """
@@ -188,6 +189,27 @@ def generate_brief(portfolio, regime, allocations, recent_outcomes,
         if s.notes:
             for note in s.notes:
                 lines.append(f"    Note: {note}")
+        lines.append("")
+
+    # ── Economic Calendar ────────────────────────────────────────────────
+    if calendar:
+        from supervisor_calendar import format_calendar_for_prompt
+        lines.append(_bar("ECONOMIC CALENDAR"))
+        lines.append(format_calendar_for_prompt(calendar))
+        lines.append("")
+
+    # ── News Headlines ───────────────────────────────────────────────────
+    if news:
+        from supervisor_news import format_news_for_prompt
+        lines.append(_bar("BREAKING NEWS"))
+        lines.append(format_news_for_prompt(news, max_headlines=8))
+        lines.append("")
+
+    # ── Social Sentiment ─────────────────────────────────────────────────
+    if social:
+        from supervisor_social import format_social_for_prompt
+        lines.append(_bar("SOCIAL SENTIMENT  (Stocktwits)"))
+        lines.append(format_social_for_prompt(social))
         lines.append("")
 
     # ── Sentiment & On-Chain ────────────────────────────────────────────
@@ -306,14 +328,16 @@ def save_brief(text: str) -> None:
 
 
 def fire_morning_brief(portfolio, regime, allocations, recent_outcomes,
-                       sentiment=None, correlation=None) -> None:
+                       sentiment=None, correlation=None,
+                       news=None, calendar=None, social=None) -> None:
     """
     Generate and save the morning brief. Mark today as fired.
     Called by supervisor main loop when should_fire() returns True.
     """
     log.info("[BRIEF] Generating morning pre-market brief...")
     text = generate_brief(portfolio, regime, allocations, recent_outcomes,
-                          sentiment=sentiment, correlation=correlation)
+                          sentiment=sentiment, correlation=correlation,
+                          news=news, calendar=calendar, social=social)
     save_brief(text)
 
     # Print brief to supervisor log (truncated to first 40 lines)
