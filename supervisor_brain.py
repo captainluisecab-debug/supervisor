@@ -37,6 +37,7 @@ from supervisor_news import fetch_news, format_news_for_prompt
 from supervisor_calendar import get_calendar, format_calendar_for_prompt
 from supervisor_social import fetch_social, format_social_for_prompt
 from supervisor_execution import read_recent_executions, format_executions_for_prompt
+from supervisor_unified import read_unified_portfolio, format_unified_for_prompt
 
 log = logging.getLogger("supervisor_brain")
 
@@ -96,6 +97,10 @@ def _build_prompt(portfolio, regime, history_tail: list,
     recent_execs  = read_recent_executions(20)
     exec_text     = format_executions_for_prompt(recent_execs)
 
+    # Unified portfolio — direct read of all 3 bot state files
+    unified       = read_unified_portfolio()
+    unified_text  = format_unified_for_prompt(unified)
+
     prompt = f"""You are the unified trading brain for a 3-sleeve autonomous trading ecosystem.
 Your job: analyze all three bots together and assign each one an operating mode and size multiplier.
 Be disciplined. Capital preservation comes before growth.
@@ -118,6 +123,8 @@ GLOBAL MARKETS: {regime.global_sentiment} | US open bias: {regime.us_open_bias} 
   Europe avg:    {regime.europe_pct:+.2f}%
   US futures:    {regime.us_futures_pct:+.2f}%
   {chr(10).join(f"  {n}" for n in regime.global_notes)}
+
+{unified_text}
 
 ═══════════════════════════════════════════════════
 SLEEVE STATUS
