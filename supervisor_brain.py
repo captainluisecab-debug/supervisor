@@ -18,7 +18,17 @@ from dataclasses import dataclass
 from datetime import datetime, timezone
 from typing import Optional
 
-import anthropic
+try:
+    import anthropic
+    _ANTHROPIC_AVAILABLE = True
+except ImportError:
+    anthropic = None  # type: ignore[assignment]
+    _ANTHROPIC_AVAILABLE = False
+    import logging as _logging
+    _logging.getLogger("supervisor_brain").warning(
+        "anthropic package not installed — Claude brain disabled. "
+        "Install with: pip install anthropic"
+    )
 
 from supervisor_settings import (
     ANTHROPIC_API_KEY, CLAUDE_MODEL,
@@ -245,6 +255,9 @@ Respond with ONLY valid JSON, no markdown, no explanation outside JSON:
 # ── Claude call ──────────────────────────────────────────────────────
 
 def _call_claude(prompt: str) -> Optional[dict]:
+    if not _ANTHROPIC_AVAILABLE or anthropic is None:
+        log.warning("anthropic package not available — cannot call Claude")
+        return None
     client = anthropic.Anthropic(api_key=ANTHROPIC_API_KEY)
     try:
         msg = client.messages.create(
@@ -303,7 +316,11 @@ def _write_enzobot_command(kraken_cmd: dict) -> None:
     command = mode_map.get(mode, "resume_auto")
     reason  = kraken_cmd.get("reasoning", "supervisor directive")
 
-    enzobot_cmd_path = r"C:\Projects\enzobot\supervisor_command.json"
+    _enzobot_base = os.path.dirname(
+        os.environ.get("ENZOBOT_STATE", os.path.join(os.path.dirname(os.path.abspath(__file__)),
+                                                      "..", "enzobot", "state.json"))
+    )
+    enzobot_cmd_path = os.path.join(_enzobot_base, "supervisor_command.json")
     payload = {
         "enabled": True,
         "command": command,

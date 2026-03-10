@@ -85,9 +85,12 @@ def read_enzobot() -> SleeveState:
 
     pnl_usd  = equity - ENZOBOT_BASELINE
     pnl_pct  = pnl_usd / ENZOBOT_BASELINE * 100
-    dd_pct   = float(state.get("drawdown_pct", 0))
+    # Compute dd_pct from equity and equity_peak (state.json has no "drawdown_pct" field)
+    eq_peak  = float(state.get("equity_peak", ENZOBOT_BASELINE))
+    dd_pct   = ((equity - eq_peak) / eq_peak * 100) if eq_peak > 0 else 0.0
     mode     = brain.get("active_mode", "UNKNOWN")
-    cycle    = brain.get("cycle", state.get("cycle", 0))
+    # brain_state.json uses "last_change_cycle" not "cycle"
+    cycle    = int(brain.get("last_change_cycle", state.get("cycle", 0)))
     open_ct  = sum(1 for p in pos.values() if float(p.get("qty", 0)) > 0) if isinstance(pos, dict) else 0
 
     notes = []
