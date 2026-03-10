@@ -57,7 +57,8 @@ class BrainDecision:
 
 # ── Prompt builder ───────────────────────────────────────────────────
 
-def _build_prompt(portfolio, regime, history_tail: list) -> str:
+def _build_prompt(portfolio, regime, history_tail: list,
+                  corr_snap=None, sentiment_snap=None) -> str:
     sleeves = portfolio.sleeves
     k = sleeves.get("kraken_crypto")
     s = sleeves.get("sfm_tactical")
@@ -71,13 +72,11 @@ def _build_prompt(portfolio, regime, history_tail: list) -> str:
     allocations  = compute_allocations()
     alloc_text   = format_allocations_for_prompt(allocations)
 
-    # Sentiment + on-chain signals
-    sentiment    = get_sentiment_signals()
-    signal_text  = format_signals_for_prompt(sentiment)
+    # Sentiment + on-chain signals (passed in from run_brain to avoid double fetch)
+    signal_text = format_signals_for_prompt(sentiment_snap) if sentiment_snap else "  unavailable"
 
-    # Correlation collapse detection
-    correlation  = check_correlation()
-    corr_text    = format_correlation_for_prompt(correlation)
+    # Correlation collapse detection (passed in from run_brain)
+    corr_text = format_correlation_for_prompt(corr_snap) if corr_snap else "  unavailable"
 
     prompt = f"""You are the unified trading brain for a 3-sleeve autonomous trading ecosystem.
 Your job: analyze all three bots together and assign each one an operating mode and size multiplier.
@@ -304,10 +303,12 @@ def run_brain(portfolio, regime, history_tail: list) -> BrainDecision:
             outcome.overall_verdict, outcome.total_chg_pct,
         )
 
-    # Run correlation check — used after Claude responds to enforce size cap
-    corr_snap = check_correlation()
+    # Fetch signals once — passed to prompt builder and used for size cap enforcement
+    corr_snap      = check_correlation()
+    sentiment_snap = get_sentiment_signals()
 
-    prompt = _build_prompt(portfolio, regime, history_tail)
+    prompt = _build_prompt(portfolio, regime, history_tail,
+                           corr_snap=corr_snap, sentiment_snap=sentiment_snap)
     log.info("[BRAIN] Calling Claude for unified portfolio decision...")
 
     raw = _call_claude(prompt)
