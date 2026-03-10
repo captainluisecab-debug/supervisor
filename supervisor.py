@@ -19,6 +19,13 @@ from datetime import datetime, timezone
 # ── Logging ──────────────────────────────────────────────────────────
 os.makedirs(os.path.join(os.path.dirname(os.path.abspath(__file__)), "logs"), exist_ok=True)
 
+# Force UTF-8 on stdout — Windows services default to cp1252 which breaks Unicode chars
+if hasattr(sys.stdout, "reconfigure"):
+    try:
+        sys.stdout.reconfigure(encoding="utf-8", errors="replace")
+    except Exception:
+        pass
+
 logging.basicConfig(
     level=logging.INFO,
     format="[%(asctime)s][SUPERVISOR] %(message)s",
