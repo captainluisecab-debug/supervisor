@@ -215,6 +215,17 @@ def generate_brief(portfolio, regime, allocations, recent_outcomes,
         lines.append(f"  [Yield data unavailable: {_yield_exc}]")
     lines.append("")
 
+    # ── Kraken+ Free Tier ────────────────────────────────────────────────
+    lines.append(_bar("KRAKEN+ FREE TIER  (fee-free allowance)"))
+    try:
+        import sys
+        sys.path.insert(0, r"C:\Projects\enzobot")
+        from kraken_free_tier import format_for_brief
+        lines.append(format_for_brief())
+    except Exception as _free_tier_exc:
+        lines.append(f"  [Free tier data unavailable: {_free_tier_exc}]")
+    lines.append("")
+
     # ── Economic Calendar ────────────────────────────────────────────────
     if calendar:
         from supervisor_calendar import format_calendar_for_prompt
