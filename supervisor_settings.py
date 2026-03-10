@@ -57,7 +57,18 @@ SPY_VOL_RISK_OFF      = _f("SPY_VOL_RISK_OFF_PCT",   2.5)
 
 CYCLE_SEC = _i("CYCLE_SEC", 300)
 
+# Claude brain
+ANTHROPIC_API_KEY    = _s("ANTHROPIC_API_KEY")
+CLAUDE_MODEL         = _s("CLAUDE_MODEL", "claude-sonnet-4-6")
+BRAIN_INTERVAL_CYCLES = _i("BRAIN_INTERVAL_CYCLES", 6)  # call Claude every N cycles
+
 # Output paths
-REPORT_FILE  = os.path.join(BASE_DIR, "supervisor_report.json")
-HISTORY_FILE = os.path.join(BASE_DIR, "supervisor_history.jsonl")
-STOP_FILE    = os.path.join(BASE_DIR, "EMERGENCY_STOP.txt")
+REPORT_FILE   = os.path.join(BASE_DIR, "supervisor_report.json")
+HISTORY_FILE  = os.path.join(BASE_DIR, "supervisor_history.jsonl")
+STOP_FILE     = os.path.join(BASE_DIR, "EMERGENCY_STOP.txt")
+COMMANDS_DIR  = os.path.join(BASE_DIR, "commands")
+
+# Per-bot command files (supervisor writes, bots read)
+CMD_KRAKEN = os.path.join(COMMANDS_DIR, "kraken_cmd.json")
+CMD_SFM    = os.path.join(COMMANDS_DIR, "sfm_cmd.json")
+CMD_ALPACA = os.path.join(COMMANDS_DIR, "alpaca_cmd.json")
