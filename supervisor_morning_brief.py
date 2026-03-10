@@ -304,6 +304,17 @@ def generate_brief(portfolio, regime, allocations, recent_outcomes,
     lines.append(f"  End of brief  |  Generated {now_utc.strftime('%Y-%m-%d %H:%M UTC')}")
     lines.append("=" * 64)
 
+    # ── Go-Live Readiness Scorecard ──────────────────────────────────────────
+    try:
+        from golive_tracker import generate_golive_scorecard
+        lines.append("")
+        lines.append("")
+        scorecard = generate_golive_scorecard()
+        lines.append(scorecard)
+    except Exception as _golive_exc:
+        lines.append("")
+        lines.append(f"[GO-LIVE SCORECARD] Failed to generate: {_golive_exc}")
+
     return "\n".join(lines)
 
 
