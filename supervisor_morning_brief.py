@@ -106,7 +106,8 @@ def _bar(label: str, width: int = 60) -> str:
     return f"== {label} {'=' * max(0, pad)}"
 
 
-def generate_brief(portfolio, regime, allocations, recent_outcomes) -> str:
+def generate_brief(portfolio, regime, allocations, recent_outcomes,
+                   sentiment=None, correlation=None) -> str:
     """
     Build the full morning brief as a plain-text string.
     """
@@ -187,6 +188,22 @@ def generate_brief(portfolio, regime, allocations, recent_outcomes) -> str:
         if s.notes:
             for note in s.notes:
                 lines.append(f"    Note: {note}")
+        lines.append("")
+
+    # ── Sentiment & On-Chain ────────────────────────────────────────────
+    if sentiment:
+        lines.append(_bar("SENTIMENT & ON-CHAIN SIGNALS"))
+        for note in sentiment.notes:
+            lines.append(f"  {note}")
+        lines.append("")
+
+    # ── Correlation ─────────────────────────────────────────────────────
+    if correlation:
+        lines.append(_bar("BTC/SPY CORRELATION"))
+        for note in correlation.notes:
+            lines.append(f"  {note}")
+        if correlation.warning:
+            lines.append(f"  !! COLLAPSE: size_mult capped at {correlation.size_mult_cap}x")
         lines.append("")
 
     # ── Allocation Engine ────────────────────────────────────────────────
@@ -288,13 +305,15 @@ def save_brief(text: str) -> None:
         log.error("[BRIEF] Failed to append brief log: %s", exc)
 
 
-def fire_morning_brief(portfolio, regime, allocations, recent_outcomes) -> None:
+def fire_morning_brief(portfolio, regime, allocations, recent_outcomes,
+                       sentiment=None, correlation=None) -> None:
     """
     Generate and save the morning brief. Mark today as fired.
     Called by supervisor main loop when should_fire() returns True.
     """
     log.info("[BRIEF] Generating morning pre-market brief...")
-    text = generate_brief(portfolio, regime, allocations, recent_outcomes)
+    text = generate_brief(portfolio, regime, allocations, recent_outcomes,
+                          sentiment=sentiment, correlation=correlation)
     save_brief(text)
 
     # Print brief to supervisor log (truncated to first 40 lines)

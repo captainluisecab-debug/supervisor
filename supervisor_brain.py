@@ -29,6 +29,10 @@ from supervisor_memory import (
     load_recent_outcomes, format_outcomes_for_prompt,
 )
 from supervisor_allocation import compute_allocations, format_allocations_for_prompt
+from supervisor_signals import get_sentiment_signals, format_signals_for_prompt
+from supervisor_correlation import (
+    check_correlation, format_correlation_for_prompt, apply_correlation_cap,
+)
 
 log = logging.getLogger("supervisor_brain")
 
@@ -66,6 +70,14 @@ def _build_prompt(portfolio, regime, history_tail: list) -> str:
     # Performance-based allocation recommendations
     allocations  = compute_allocations()
     alloc_text   = format_allocations_for_prompt(allocations)
+
+    # Sentiment + on-chain signals
+    sentiment    = get_sentiment_signals()
+    signal_text  = format_signals_for_prompt(sentiment)
+
+    # Correlation collapse detection
+    correlation  = check_correlation()
+    corr_text    = format_correlation_for_prompt(correlation)
 
     prompt = f"""You are the unified trading brain for a 3-sleeve autonomous trading ecosystem.
 Your job: analyze all three bots together and assign each one an operating mode and size multiplier.
@@ -125,7 +137,17 @@ OUTCOME MEMORY (scored decisions — learn from these)
 {outcome_text}
 
 ═══════════════════════════════════════════════════
-ALLOCATION ENGINE (data-driven size_mult guidance)
+SENTIMENT & ON-CHAIN SIGNALS
+═══════════════════════════════════════════════════
+{signal_text}
+
+═══════════════════════════════════════════════════
+CROSS-ASSET CORRELATION (BTC vs SPY)
+═══════════════════════════════════════════════════
+{corr_text}
+
+═══════════════════════════════════════════════════
+ALLOCATION ENGINE (Sharpe + Kelly Criterion)
 ═══════════════════════════════════════════════════
 {alloc_text}
 
@@ -282,6 +304,9 @@ def run_brain(portfolio, regime, history_tail: list) -> BrainDecision:
             outcome.overall_verdict, outcome.total_chg_pct,
         )
 
+    # Run correlation check — used after Claude responds to enforce size cap
+    corr_snap = check_correlation()
+
     prompt = _build_prompt(portfolio, regime, history_tail)
     log.info("[BRAIN] Calling Claude for unified portfolio decision...")
 
@@ -296,6 +321,18 @@ def run_brain(portfolio, regime, history_tail: list) -> BrainDecision:
     s_cmd = raw.get("sfm",    SAFE_DEFAULT)
     a_cmd = raw.get("alpaca", SAFE_DEFAULT)
     note  = raw.get("portfolio_note", "")
+
+    # Enforce correlation collapse size cap (hard override — not advisory)
+    if corr_snap.warning:
+        for cmd, name in [(k_cmd, "kraken"), (s_cmd, "sfm"), (a_cmd, "alpaca")]:
+            original = cmd.get("size_mult", 1.0)
+            capped   = apply_correlation_cap(float(original), corr_snap)
+            if capped < original:
+                log.warning(
+                    "[CORR] %s size_mult capped: %.1fx -> %.1fx (correlation collapse)",
+                    name, original, capped,
+                )
+                cmd["size_mult"] = capped
 
     _write_command(CMD_KRAKEN, dict(k_cmd), "kraken")
     _write_command(CMD_SFM,    dict(s_cmd), "sfm")

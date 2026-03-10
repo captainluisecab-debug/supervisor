@@ -44,6 +44,8 @@ from supervisor_brain import run_brain
 from supervisor_allocation import compute_allocations
 from supervisor_memory import load_recent_outcomes
 from supervisor_morning_brief import should_fire, fire_morning_brief
+from supervisor_signals import get_sentiment_signals
+from supervisor_correlation import check_correlation
 
 
 def _load_peak() -> float:
@@ -104,7 +106,10 @@ def _run_cycle(cycle: int, peak_equity: float) -> float:
     if should_fire():
         allocations     = compute_allocations()
         recent_outcomes = load_recent_outcomes(8)
-        fire_morning_brief(portfolio, regime, allocations, recent_outcomes)
+        sentiment       = get_sentiment_signals()
+        correlation     = check_correlation()
+        fire_morning_brief(portfolio, regime, allocations, recent_outcomes,
+                           sentiment=sentiment, correlation=correlation)
 
     # 4. Claude unified brain — every BRAIN_INTERVAL_CYCLES
 
