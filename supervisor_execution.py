@@ -2,10 +2,21 @@
 supervisor_execution.py — Shared execution log reader/writer.
 Each bot appends here after every trade. Master brain reads it every cycle.
 """
-import json, os
+import json, os, time
 from datetime import datetime, timezone
 
 EXEC_LOG = r"C:\Projects\supervisor\execution_log.jsonl"
+
+def _append_with_retry(path: str, line: str, retries: int = 5) -> None:
+    """Append a line to a shared log file with retry on write error (concurrent access)."""
+    for attempt in range(retries):
+        try:
+            with open(path, "a", encoding="utf-8") as f:
+                f.write(line)
+            return
+        except OSError:
+            if attempt < retries - 1:
+                time.sleep(0.05 * (attempt + 1))
 
 def log_execution(bot: str, symbol: str, side: str, size_usd: float,
                   price: float, pnl_usd: float, reason: str) -> None:
@@ -20,8 +31,7 @@ def log_execution(bot: str, symbol: str, side: str, size_usd: float,
         "pnl_usd": pnl_usd,     # 0.0 for buys
         "reason": reason,
     }
-    with open(EXEC_LOG, "a", encoding="utf-8") as f:
-        f.write(json.dumps(entry) + "\n")
+    _append_with_retry(EXEC_LOG, json.dumps(entry) + "\n")
 
 def read_recent_executions(n: int = 20) -> list:
     """Read last N executions across all bots."""
