@@ -72,7 +72,7 @@ def read_enzobot() -> SleeveState:
     pos     = state.get("positions", {})
     # Estimate equity: cash + sum of position values (mark at cost if no price)
     pos_value = sum(
-        float(p.get("qty", 0)) * float(p.get("last_price", p.get("avg_price", 0)))
+        float(p.get("qty", 0)) * float(p.get("last_price") or p.get("avg_price") or 0)
         for p in pos.values()
         if float(p.get("qty", 0)) > 0
     ) if isinstance(pos, dict) else 0.0
