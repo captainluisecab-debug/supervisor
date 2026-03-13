@@ -56,6 +56,7 @@ from supervisor_correlation import check_correlation
 from supervisor_calendar import get_calendar
 from supervisor_anomaly import AnomalyDetector
 from supervisor_selfheal import run_selfheal
+from supervisor_escalation import check_escalations
 
 
 def _dynamic_brain_interval(regime, portfolio) -> int:
@@ -178,7 +179,12 @@ def _run_cycle(cycle: int, peak_equity: float, anomaly_detector: AnomalyDetector
         log.info("Brain update in %d cycles (~%dm) [interval=%d]",
                  next_brain, next_brain * CYCLE_SEC // 60, brain_interval)
 
-    # 5. Self-healing — anomaly detection + Opus remediation (every cycle)
+    # 5. Escalation bus — bot Sonnet → Opus → bot (every cycle, immediate)
+    escalated = check_escalations(portfolio, regime, cycle)
+    if escalated:
+        log.info("[ESCALATION] Handled %d bot escalation(s) this cycle", escalated)
+
+    # 6. Self-healing — anomaly detection + Opus remediation (every cycle)
     anomaly_report = anomaly_detector.check(cycle)
     if anomaly_report.anomalies:
         portfolio_summary = (
