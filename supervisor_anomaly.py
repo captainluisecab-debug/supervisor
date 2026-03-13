@@ -224,6 +224,7 @@ class AnomalyDetector:
     def _check_frozen_cycle(self, state: dict, bot: str) -> Optional[Anomaly]:
         """Bot cycle counter hasn't advanced — process may be frozen."""
         now = time.time()
+        cycle = int(state.get("cycle", 0))
 
         # Enzobot state.json has no 'cycle' field — use last_cycle_ts instead
         if bot == "enzobot":
