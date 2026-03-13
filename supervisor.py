@@ -54,6 +54,8 @@ from supervisor_morning_brief import should_fire, fire_morning_brief
 from supervisor_signals import get_sentiment_signals
 from supervisor_correlation import check_correlation
 from supervisor_calendar import get_calendar
+from supervisor_anomaly import AnomalyDetector
+from supervisor_selfheal import run_selfheal
 
 
 def _dynamic_brain_interval(regime, portfolio) -> int:
@@ -110,7 +112,7 @@ def _load_history_tail(n: int = 3) -> list:
     return lines
 
 
-def _run_cycle(cycle: int, peak_equity: float) -> float:
+def _run_cycle(cycle: int, peak_equity: float, anomaly_detector: AnomalyDetector) -> float:
     log.info("── CYCLE %d ──────────────────────────────────────", cycle)
 
     if os.path.exists(STOP_FILE):
@@ -176,7 +178,22 @@ def _run_cycle(cycle: int, peak_equity: float) -> float:
         log.info("Brain update in %d cycles (~%dm) [interval=%d]",
                  next_brain, next_brain * CYCLE_SEC // 60, brain_interval)
 
-    # 5. Report
+    # 5. Self-healing — anomaly detection + Opus remediation (every cycle)
+    anomaly_report = anomaly_detector.check(cycle)
+    if anomaly_report.anomalies:
+        portfolio_summary = (
+            f"Total equity ${portfolio.total_equity:.2f} | PnL ${portfolio.total_pnl_usd:+.2f} "
+            f"({portfolio.total_pnl_pct:+.2f}%) | DD {portfolio.total_dd_pct:.2f}%"
+        )
+        regime_summary = (
+            f"{regime.regime} (conf {regime.confidence:.0%}) | BTC 7d {regime.btc_7d_pct:+.1f}% "
+            f"| VIX {regime.vix:.1f} | {' | '.join(regime.notes)}"
+        )
+        healed = run_selfheal(anomaly_report, portfolio_summary, regime_summary, cycle)
+        if healed:
+            log.info("[SELFHEAL] %d action(s) executed this cycle", healed)
+
+    # 6. Report
     report = build_report(portfolio, regime, cycle, new_peak)
     save_report(report)
 
@@ -207,11 +224,12 @@ def main() -> None:
 
     peak_equity = _load_peak()
     cycle = 0
+    anomaly_detector = AnomalyDetector()
 
     while True:
         cycle += 1
         try:
-            peak_equity = _run_cycle(cycle, peak_equity)
+            peak_equity = _run_cycle(cycle, peak_equity, anomaly_detector)
         except KeyboardInterrupt:
             raise
         except Exception as exc:
