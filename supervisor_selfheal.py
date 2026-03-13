@@ -306,7 +306,9 @@ def _execute_clear_lock(action: dict, cycle: int):
 
 
 def _execute_write_supervisor_cmd(action: dict, cycle: int):
-    bot    = action.get("bot", "kraken")
+    # Normalize bot name — Opus may return "enzobot"/"sfmbot"/"alpacabot"
+    _bot_alias = {"enzobot": "kraken", "sfmbot": "sfm", "alpacabot": "alpaca"}
+    bot    = _bot_alias.get(action.get("bot", "kraken"), action.get("bot", "kraken"))
     mode   = action.get("mode", "SCOUT")
     size   = float(action.get("size_mult", 0.5))
     entry  = bool(action.get("entry_allowed", True))

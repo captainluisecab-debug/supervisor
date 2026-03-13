@@ -224,18 +224,24 @@ class AnomalyDetector:
     def _check_frozen_cycle(self, state: dict, bot: str) -> Optional[Anomaly]:
         """Bot cycle counter hasn't advanced — process may be frozen."""
         now = time.time()
-        cycle = int(state.get("cycle", 0))
 
+        # Enzobot state.json has no 'cycle' field — use last_cycle_ts instead
         if bot == "enzobot":
-            if cycle != self._last_enzobot_cycle:
-                self._last_enzobot_cycle      = cycle
+            last_ts = int(state.get("last_cycle_ts", 0))
+            # If last_cycle_ts is 0 or never set, bot hasn't started yet — skip
+            if last_ts == 0:
+                self._last_enzobot_cycle_seen = now
+                return None
+            if last_ts != self._last_enzobot_cycle:
+                self._last_enzobot_cycle      = last_ts
                 self._last_enzobot_cycle_seen = now
             elif now - self._last_enzobot_cycle_seen > CYCLE_FROZEN_SEC:
+                age_min = (now - self._last_enzobot_cycle_seen) / 60
                 return Anomaly(
                     code="CYCLE_FROZEN_ENZOBOT",
                     severity="HIGH",
-                    description=f"Enzobot cycle stuck at {cycle} for {(now - self._last_enzobot_cycle_seen)/60:.0f} min",
-                    data={"cycle": cycle, "frozen_sec": round(now - self._last_enzobot_cycle_seen)},
+                    description=f"Enzobot last_cycle_ts unchanged for {age_min:.0f} min — process may be frozen",
+                    data={"last_cycle_ts": last_ts, "frozen_min": round(age_min)},
                 )
         elif bot == "sfm":
             if cycle != self._last_sfm_cycle:
