@@ -57,6 +57,8 @@ from supervisor_calendar import get_calendar
 from supervisor_anomaly import AnomalyDetector
 from supervisor_selfheal import run_selfheal
 from supervisor_escalation import check_escalations
+from supervisor_telegram import send_alert, start_telegram_bot
+from supervisor_web import start_web_server
 
 
 def _dynamic_brain_interval(regime, portfolio) -> int:
@@ -113,7 +115,12 @@ def _load_history_tail(n: int = 3) -> list:
     return lines
 
 
+_prev_regime: str = ""
+_prev_kill_switch: bool = False
+
+
 def _run_cycle(cycle: int, peak_equity: float, anomaly_detector: AnomalyDetector) -> float:
+    global _prev_regime, _prev_kill_switch
     log.info("── CYCLE %d ──────────────────────────────────────", cycle)
 
     if os.path.exists(STOP_FILE):
@@ -143,6 +150,15 @@ def _run_cycle(cycle: int, peak_equity: float, anomaly_detector: AnomalyDetector
         regime.btc_7d_pct, regime.spy_vol_10d,
     )
 
+    # Alert: regime change
+    if _prev_regime and regime.regime != _prev_regime:
+        emoji = {"RISK_ON": "🟢", "NEUTRAL": "🟡", "RISK_OFF": "🔴"}.get(regime.regime, "⚪")
+        send_alert(
+            f"{emoji} <b>Regime changed: {_prev_regime} → {regime.regime}</b>\n"
+            f"BTC 7d: {regime.btc_7d_pct:+.2f}%  |  VIX: {regime.vix:.1f}  |  Conf: {regime.confidence:.0%}"
+        )
+    _prev_regime = regime.regime
+
     # 3. Morning pre-market brief — once per weekday at 9 AM ET
     if should_fire():
         from supervisor_news import fetch_news
@@ -157,6 +173,12 @@ def _run_cycle(cycle: int, peak_equity: float, anomaly_detector: AnomalyDetector
         fire_morning_brief(portfolio, regime, allocations, recent_outcomes,
                            sentiment=sentiment, correlation=correlation,
                            news=news, calendar=calendar, social=social)
+        send_alert(
+            f"🌅 <b>Morning brief ready</b>\n"
+            f"Regime: {regime.regime}  |  Equity: ${portfolio.total_equity:,.2f}  "
+            f"|  PnL: {portfolio.total_pnl_pct:+.2f}%\n"
+            f"Use /brief to read full report."
+        )
 
     # 4. Claude unified brain — dynamic interval based on market conditions
     brain_interval = _dynamic_brain_interval(regime, portfolio)
@@ -174,6 +196,17 @@ def _run_cycle(cycle: int, peak_equity: float, anomaly_detector: AnomalyDetector
             decision.alpaca.get("mode"), decision.alpaca.get("size_mult"),
         )
         log.info("[BRAIN] %s", decision.portfolio_note)
+
+        # Alert if any bot is put into DEFENSE
+        defense_bots = [
+            b for b, d in [("kraken", decision.kraken), ("sfm", decision.sfm), ("alpaca", decision.alpaca)]
+            if d.get("mode") == "DEFENSE"
+        ]
+        if defense_bots:
+            send_alert(
+                f"🛡️ <b>Brain → DEFENSE</b>: {', '.join(defense_bots)}\n"
+                f"{decision.portfolio_note}"
+            )
     else:
         next_brain = brain_interval - (cycle % brain_interval)
         log.info("Brain update in %d cycles (~%dm) [interval=%d]",
@@ -195,9 +228,17 @@ def _run_cycle(cycle: int, peak_equity: float, anomaly_detector: AnomalyDetector
             f"{regime.regime} (conf {regime.confidence:.0%}) | BTC 7d {regime.btc_7d_pct:+.1f}% "
             f"| VIX {regime.vix:.1f} | {' | '.join(regime.notes)}"
         )
+
+        # Alert on HIGH severity anomalies
+        high = [a for a in anomaly_report.anomalies if getattr(a, "severity", "") == "HIGH"]
+        if high:
+            names = ", ".join(getattr(a, "type", str(a)) for a in high)
+            send_alert(f"🔧 <b>Anomaly detected</b>: {names}\nSelf-heal running...")
+
         healed = run_selfheal(anomaly_report, portfolio_summary, regime_summary, cycle)
         if healed:
             log.info("[SELFHEAL] %d action(s) executed this cycle", healed)
+            send_alert(f"✅ <b>Self-heal complete</b>: {healed} action(s) applied this cycle.")
 
     # 6. Report
     report = build_report(portfolio, regime, cycle, new_peak)
@@ -209,6 +250,13 @@ def _run_cycle(cycle: int, peak_equity: float, anomaly_detector: AnomalyDetector
 
     if portfolio.kill_switch_active:
         log.warning("KILL SWITCH ACTIVE — all bots forced to DEFENSE via command files")
+        if not _prev_kill_switch:
+            send_alert(
+                f"🚨 <b>KILL SWITCH ACTIVATED</b>\n"
+                f"Portfolio DD {portfolio.total_dd_pct:.2f}% exceeded threshold.\n"
+                f"All bots forced to DEFENSE."
+            )
+    _prev_kill_switch = portfolio.kill_switch_active
 
     log.info("Report saved → supervisor_report.json")
     return new_peak
@@ -227,6 +275,10 @@ def main() -> None:
     log.info("  sfm_tactical   — tactical booster      (sfmbot)")
     log.info("  alpaca_stocks  — stable compounder     (alpacabot)")
     log.info("=" * 65)
+
+    # Start remote access servers
+    start_telegram_bot()
+    start_web_server()
 
     peak_equity = _load_peak()
     cycle = 0

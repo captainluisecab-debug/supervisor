@@ -9,3 +9,6 @@ requests>=2.31.0
 
 # Alpaca trading SDK (portfolio reader in supervisor_portfolio.py)
 alpaca-py>=0.13.0
+
+# Web dashboard (supervisor_web.py)
+flask>=3.0.0

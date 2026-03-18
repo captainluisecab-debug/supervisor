@@ -31,11 +31,13 @@ supervisor/
 ├── supervisor_unified.py         # Cross-bot portfolio view builder
 ├── supervisor_report.py          # Generates supervisor_report.json
 ├── supervisor_settings.py        # Centralized .env config loader (import first)
+├── supervisor_telegram.py        # Telegram bot — push alerts + remote commands
+├── supervisor_web.py             # Web dashboard + REST API (Flask, port 8080)
 ├── golive_tracker.py             # Go-live readiness scorecard (5 criteria, 0-100)
 ├── status.py                     # Human-readable CLI dashboard
 ├── watchdog.py                   # Process supervisor (restarts supervisor.py on crash)
 ├── global_markets.py             # Global market data aggregator
-└── requirements.txt              # anthropic, requests, alpaca-py
+└── requirements.txt              # anthropic, requests, alpaca-py, flask
 ```
 
 ---
@@ -105,6 +107,16 @@ BRAIN_INTERVAL_CYCLES=6        # Call Claude every N cycles (dynamic in stress)
 
 # Claude model
 CLAUDE_MODEL=claude-sonnet-4-6 # Sonnet for brain; escalations/selfheal always use Opus
+
+# Telegram remote access (optional — leave blank to disable)
+TELEGRAM_BOT_TOKEN=            # From BotFather (@BotFather on Telegram)
+TELEGRAM_CHAT_ID=              # Your personal chat ID (send /start to your bot, then check)
+
+# Web dashboard (optional)
+WEB_ENABLED=true               # Set false to disable
+WEB_HOST=0.0.0.0               # Bind address (0.0.0.0 = all interfaces)
+WEB_PORT=8080                  # Dashboard port
+WEB_SECRET=                    # Optional auth token (passed as X-Secret header or ?secret=)
 ```
 
 ---
@@ -240,6 +252,60 @@ Format (set in `supervisor.py`): `[HH:MM:SS][module_name] message`
 | `commands/alpaca_cmd.json` | Brain → AlpacaBot | JSON object |
 | `escalations/{bot}_request.json` | Bot → Supervisor | JSON object |
 | `escalations/{bot}_response.json` | Supervisor → Bot | JSON object |
+
+---
+
+## Remote Access
+
+### Telegram Bot (`supervisor_telegram.py`)
+
+Set `TELEGRAM_BOT_TOKEN` and `TELEGRAM_CHAT_ID` in `.env` to enable.
+
+**Commands** (send in your Telegram chat with the bot):
+
+| Command | Description |
+|---------|-------------|
+| `/status` | Portfolio equity, PnL, DD, sleeve breakdown |
+| `/regime` | Current market regime + BTC/SPY data |
+| `/brief` | Latest morning brief (truncated to 3800 chars) |
+| `/mode <bot> <MODE>` | Override bot mode (e.g. `/mode kraken DEFENSE`) |
+| `/selfheal` | Request self-heal scan on next cycle |
+| `/stop` | Activate emergency stop (writes `EMERGENCY_STOP.txt`) |
+| `/help` | List all commands |
+
+**Push alerts** (sent automatically by `supervisor.py`):
+- Regime change (e.g. NEUTRAL → RISK_OFF)
+- Kill switch activated
+- Brain puts any bot into DEFENSE mode
+- HIGH severity anomaly detected
+- Self-heal actions applied
+- Morning brief ready
+
+**Setup**:
+1. Message @BotFather on Telegram → `/newbot` → copy token to `TELEGRAM_BOT_TOKEN`
+2. Start a chat with your new bot, then visit `https://api.telegram.org/bot<TOKEN>/getUpdates` to find your `chat_id`
+3. Set `TELEGRAM_CHAT_ID` in `.env`
+
+### Web Dashboard (`supervisor_web.py`)
+
+Starts automatically on `http://0.0.0.0:8080` (configurable via `WEB_PORT`).
+
+**Endpoints**:
+
+| Endpoint | Method | Description |
+|----------|--------|-------------|
+| `/` | GET | HTML dashboard (auto-refreshes every 30s) |
+| `/api/status` | GET | JSON: portfolio, regime, sleeves, alerts |
+| `/api/report` | GET | Full `supervisor_report.json` |
+| `/api/brief` | GET | Morning brief as plain text |
+| `/api/command` | POST | Override bot mode: `{"bot": "kraken", "mode": "DEFENSE"}` |
+| `/api/stop` | POST | Activate emergency stop |
+
+**Auth**: If `WEB_SECRET` is set, pass it as `X-Secret` header or `?secret=` query param.
+
+**Remote access options**:
+- LAN only: access via `http://<machine-ip>:8080`
+- Remote: port-forward 8080 on your router, or use a VPN / ngrok / Cloudflare Tunnel
 
 ---
 

@@ -72,3 +72,13 @@ COMMANDS_DIR  = os.path.join(BASE_DIR, "commands")
 CMD_KRAKEN = os.path.join(COMMANDS_DIR, "kraken_cmd.json")
 CMD_SFM    = os.path.join(COMMANDS_DIR, "sfm_cmd.json")
 CMD_ALPACA = os.path.join(COMMANDS_DIR, "alpaca_cmd.json")
+
+# Telegram remote access (optional)
+TELEGRAM_BOT_TOKEN = _s("TELEGRAM_BOT_TOKEN")
+TELEGRAM_CHAT_ID   = _s("TELEGRAM_CHAT_ID")
+
+# Web dashboard (optional)
+WEB_ENABLED = _s("WEB_ENABLED", "true").lower() not in ("false", "0", "no")
+WEB_HOST    = _s("WEB_HOST", "0.0.0.0")
+WEB_PORT    = _i("WEB_PORT", 8080)
+WEB_SECRET  = _s("WEB_SECRET")  # optional auth token for REST API
