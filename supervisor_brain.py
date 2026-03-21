@@ -60,6 +60,63 @@ SAFE_DEFAULT = {
     "reasoning": "default — Claude unavailable",
 }
 
+_VALID_MODES = {"NORMAL", "SCOUT", "DEFENSE"}
+
+
+def _validate_cmd(cmd: dict, bot: str) -> dict:
+    """
+    Return a new normalized command dict with mode/size_mult/entry_allowed validated.
+    Never mutates the incoming dict (which may be the shared SAFE_DEFAULT object).
+    Logs every correction at WARNING level before any file write occurs.
+    """
+    if not isinstance(cmd, dict):
+        log.warning(
+            "[BRAIN][VALIDATE] %s: command is not a dict (got %s) -> DEFENSE fallback",
+            bot, type(cmd).__name__,
+        )
+        out = {"mode": "DEFENSE", "size_mult": 0.3, "entry_allowed": False,
+               "reasoning": "non-dict Claude output — conservative fallback"}
+    else:
+        out = dict(cmd)  # shallow copy — never mutate incoming
+
+    # ── mode ──────────────────────────────────────────────────────────
+    raw_mode = out.get("mode")
+    if raw_mode not in _VALID_MODES:
+        log.warning(
+            "[BRAIN][VALIDATE] %s: invalid mode %r -> DEFENSE (conservative fallback)",
+            bot, raw_mode,
+        )
+        out["mode"] = "DEFENSE"
+
+    # ── size_mult ──────────────────────────────────────────────────────
+    raw_mult = out.get("size_mult")
+    try:
+        clamped = max(0.3, min(1.3, float(raw_mult)))
+        if clamped != float(raw_mult):
+            log.warning(
+                "[BRAIN][VALIDATE] %s: size_mult %r outside [0.3, 1.3] -> clamped to %.2f",
+                bot, raw_mult, clamped,
+            )
+        out["size_mult"] = clamped
+    except (TypeError, ValueError):
+        log.warning(
+            "[BRAIN][VALIDATE] %s: size_mult %r not numeric -> 0.8 (safe default)",
+            bot, raw_mult,
+        )
+        out["size_mult"] = 0.8
+
+    # ── entry_allowed ──────────────────────────────────────────────────
+    raw_entry = out.get("entry_allowed")
+    if not isinstance(raw_entry, bool):
+        derived = (out["mode"] != "DEFENSE")
+        log.warning(
+            "[BRAIN][VALIDATE] %s: entry_allowed %r not bool -> derived %s from mode %s",
+            bot, raw_entry, derived, out["mode"],
+        )
+        out["entry_allowed"] = derived
+
+    return out
+
 
 @dataclass
 class BrainDecision:
@@ -149,7 +206,7 @@ SLEEVE STATUS
   Notes:      {" | ".join(k.notes) if k.notes else "none"}
 
 [SFM TACTICAL — Solana meme token booster]
-  Equity:     ${s.equity_usd:,.2f} (baseline $1,000 paper USDC)
+  Equity:     ${s.equity_usd:,.2f} (baseline ${s.baseline_usd:,.0f} paper USDC)
   PnL:        ${s.pnl_usd:+,.2f} ({s.pnl_pct:+.1f}%)
   Open pos:   {s.open_positions}
   Bot mode:   {s.mode}
@@ -213,7 +270,7 @@ Assign each bot one of these modes:
   SCOUT   — monitor only, reduced size, cautious entries
   DEFENSE — no new entries, protect capital, trail stops tight
 
-And a size_mult between 0.3 and 1.0 (multiplier on base trade size).
+And a size_mult between 0.3 and 1.3 (multiplier on base trade size).
 
 Rules:
 - If portfolio DD > 8%: all bots DEFENSE
@@ -231,19 +288,19 @@ Respond with ONLY valid JSON, no markdown, no explanation outside JSON:
 {{
   "kraken": {{
     "mode": "NORMAL|SCOUT|DEFENSE",
-    "size_mult": 0.0-1.0,
+    "size_mult": 0.3-1.3,
     "entry_allowed": true|false,
     "reasoning": "one sentence"
   }},
   "sfm": {{
     "mode": "NORMAL|SCOUT|DEFENSE",
-    "size_mult": 0.0-1.0,
+    "size_mult": 0.3-1.3,
     "entry_allowed": true|false,
     "reasoning": "one sentence"
   }},
   "alpaca": {{
     "mode": "NORMAL|SCOUT|DEFENSE",
-    "size_mult": 0.0-1.0,
+    "size_mult": 0.3-1.3,
     "entry_allowed": true|false,
     "reasoning": "one sentence"
   }},
@@ -301,11 +358,17 @@ def _write_defaults(reason: str = "fallback") -> None:
 
 # ── Enzobot command bridge ───────────────────────────────────────────
 
+_last_enzobot_command: str | None = None  # tracks last written command; avoids repeated injection
+
+
 def _write_enzobot_command(kraken_cmd: dict) -> None:
     """
     Translate supervisor mode into enzobot's supervisor_command.json format.
     Enzobot's brain reads this file and applies the command on next cycle.
+    Only writes when the command changes — prevents repeated injection that bypasses
+    enzobot's can_change_mode() gate and inflates changes_today (ISSUE-002).
     """
+    global _last_enzobot_command
     mode = kraken_cmd.get("mode", "NORMAL")
     # Map supervisor modes to enzobot brain commands
     mode_map = {
@@ -314,6 +377,9 @@ def _write_enzobot_command(kraken_cmd: dict) -> None:
         "DEFENSE": "defend",        # force DEFEND mode
     }
     command = mode_map.get(mode, "resume_auto")
+    if command == _last_enzobot_command:
+        return
+    _last_enzobot_command = command
     reason  = kraken_cmd.get("reasoning", "supervisor directive")
 
     _enzobot_base = os.path.dirname(
@@ -385,9 +451,9 @@ def run_brain(portfolio, regime, history_tail: list) -> BrainDecision:
         return BrainDecision(SAFE_DEFAULT, SAFE_DEFAULT, SAFE_DEFAULT,
                              "Claude failed", datetime.now(timezone.utc).isoformat())
 
-    k_cmd = raw.get("kraken", SAFE_DEFAULT)
-    s_cmd = raw.get("sfm",    SAFE_DEFAULT)
-    a_cmd = raw.get("alpaca", SAFE_DEFAULT)
+    k_cmd = _validate_cmd(raw.get("kraken", SAFE_DEFAULT), "kraken")
+    s_cmd = _validate_cmd(raw.get("sfm",    SAFE_DEFAULT), "sfm")
+    a_cmd = _validate_cmd(raw.get("alpaca", SAFE_DEFAULT), "alpaca")
     note  = raw.get("portfolio_note", "")
 
     # Enforce correlation collapse size cap (hard override — not advisory)

@@ -16,15 +16,17 @@ import json
 import logging
 import os
 import time
+from datetime import datetime, time as dtime, timezone
 from dataclasses import dataclass, field
 from typing import List, Optional
 
 log = logging.getLogger("supervisor_anomaly")
 
 # Paths
-ENZOBOT_DIR   = r"C:\Projects\enzobot"
-SFMBOT_DIR    = r"C:\Projects\sfmbot"
-ALPACA_DIR    = r"C:\Projects\alpacabot"
+ENZOBOT_DIR    = r"C:\Projects\enzobot"
+SFMBOT_DIR     = r"C:\Projects\sfmbot"
+ALPACA_DIR     = r"C:\Projects\alpacabot"
+SUPERVISOR_DIR = os.path.dirname(os.path.abspath(__file__))
 
 LOCK_FILES = [
     os.path.join(ENZOBOT_DIR,  "enzobot.lock"),
@@ -37,7 +39,7 @@ ENTRY_DROUGHT_CYCLES   = 60    # supervisor cycles (~5h at 5min) with no new ent
 ADX_BLOCK_CYCLES       = 80    # supervisor cycles where ADX blocks everything → lower threshold
 ATTACK_DD_BLOCK_CYCLES = 40    # supervisor cycles where DD > attack_max_dd → loosen threshold
 LOCK_STALE_SEC         = 600   # 10 minutes — lock file older than this = stale
-MAX_CHANGES_PER_DAY    = 30    # brain parameter changes per day before flagging churn
+MAX_CHANGES_PER_DAY    = 20    # brain parameter changes per day before flagging churn
 CYCLE_FROZEN_SEC       = 600   # bot cycle hasn't advanced in 10 min = frozen
 
 
@@ -167,7 +169,7 @@ class AnomalyDetector:
 
         # Estimate equity (cash + open position value at last known prices)
         pos_value = sum(
-            v.get("qty", 0) * v.get("last_price", v.get("avg_price", 0))
+            v.get("qty", 0) * (v.get("last_price") or v.get("avg_price") or 0)
             for v in positions.values()
         )
         equity = cash + pos_value
@@ -181,12 +183,29 @@ class AnomalyDetector:
             self._attack_dd_block_cycles = max(0, self._attack_dd_block_cycles - 2)
 
         if self._attack_dd_block_cycles >= ATTACK_DD_BLOCK_CYCLES:
+            # Cross-validate against trusted supervisor_report.json before raising.
+            # If this DD disagrees materially with the trusted source, suppress and log
+            # locally — do NOT raise an anomaly (any anomaly triggers Opus/selfheal).
+            trusted_dd = self._get_trusted_sleeve_dd("kraken_crypto")
+            if trusted_dd is not None and dd_pct > 2 * abs(trusted_dd):
+                log.warning(
+                    "[ANOMALY] INCONSISTENT_DD_DATA: computed DD %.1f%% vs trusted "
+                    "sleeve DD %.1f%% — suppressing ATTACK_DD_TOO_TIGHT (position "
+                    "price data mismatch, not a real threshold breach)",
+                    dd_pct, trusted_dd,
+                )
+                return None
             return Anomaly(
                 code="ATTACK_DD_TOO_TIGHT",
                 severity="HIGH",
-                description=f"DD {dd_pct:.1f}% > attack_max_dd {attack_max_dd}% for {self._attack_dd_block_cycles} cycles — bot permanently frozen in HOLD",
+                description=(
+                    f"DD {dd_pct:.1f}% > attack_max_dd {attack_max_dd}% for "
+                    f"{self._attack_dd_block_cycles} cycles — bot in restricted mode, "
+                    f"entries blocked. Trusted sleeve DD: {trusted_dd:.1f}%."
+                ),
                 data={
                     "dd_pct": round(dd_pct, 2),
+                    "trusted_dd_pct": round(trusted_dd, 2) if trusted_dd is not None else None,
                     "attack_max_dd": attack_max_dd,
                     "block_cycles": self._attack_dd_block_cycles,
                 },
@@ -260,6 +279,19 @@ class AnomalyDetector:
                 self._last_alpaca_cycle      = cycle
                 self._last_alpaca_cycle_seen = now
             elif now - self._last_alpaca_cycle_seen > CYCLE_FROZEN_SEC:
+                # Suppress during NYSE closed hours — alpacabot sleeps by design
+                utc_now = datetime.now(timezone.utc)
+                weekday = utc_now.weekday()  # 0=Mon ... 6=Sun
+                in_hours = (
+                    weekday < 5
+                    and dtime(14, 30) <= utc_now.time() <= dtime(21, 0)
+                )
+                if not in_hours:
+                    log.debug(
+                        "[ANOMALY] CYCLE_FROZEN_ALPACA suppressed — NYSE closed "
+                        "(weekday=%d, utc=%s)", weekday, utc_now.strftime("%H:%M")
+                    )
+                    return None
                 return Anomaly(
                     code="CYCLE_FROZEN_ALPACA",
                     severity="HIGH",
@@ -283,6 +315,20 @@ class AnomalyDetector:
             return "".join(lines[-50:])
         except Exception:
             return ""
+
+    def _get_trusted_sleeve_dd(self, sleeve_name: str) -> Optional[float]:
+        """Read trusted DD from supervisor_report.json (written by supervisor_portfolio.py).
+        Returns None if file is missing or field is absent."""
+        report_path = os.path.join(SUPERVISOR_DIR, "supervisor_report.json")
+        report = self._read_json(report_path)
+        sleeve = report.get("sleeves", {}).get(sleeve_name, {})
+        dd = sleeve.get("drawdown_pct")
+        if dd is not None:
+            try:
+                return float(dd)
+            except (TypeError, ValueError):
+                return None
+        return None
 
     # ── Main check ────────────────────────────────────────────────────
 

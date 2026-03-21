@@ -122,7 +122,8 @@ def _read_enzobot() -> BotSnapshot:
                 continue
             cost_usd   = qty * avg_price
             # Use last_price if available, otherwise mark at cost (no unrealized calc)
-            last_price = float(p.get("last_price", avg_price))
+            # Guard: last_price=0.0 is falsy — falls back to avg_price (matches supervisor_portfolio.py)
+            last_price = float(p.get("last_price") or avg_price)
             curr_val   = qty * last_price
             pnl_pct    = ((last_price - avg_price) / avg_price * 100) if avg_price > 0 else 0.0
             deployed  += cost_usd
@@ -142,10 +143,11 @@ def _read_enzobot() -> BotSnapshot:
     # Prefer drawdown_pct written directly by bot
     dd_pct = float(state.get("drawdown_pct", dd_pct))
 
-    # Trade stats — brain_state carries these when available
-    total_trades   = int(brain.get("total_trades",   state.get("total_trades",   0)))
-    winning_trades = int(brain.get("winning_trades", state.get("winning_trades", 0)))
-    win_rate       = (winning_trades / total_trades * 100) if total_trades > 0 else 0.0
+    # Trade stats — brain_state.json does not track these fields; read from state only.
+    # win_rate = -1.0 signals "not tracked" (displayed as N/A in prompt).
+    total_trades   = int(state.get("total_trades",   0))
+    winning_trades = int(state.get("winning_trades", 0))
+    win_rate       = (winning_trades / total_trades * 100) if total_trades > 0 else -1.0
 
     return BotSnapshot(
         name="enzobot",
@@ -200,17 +202,19 @@ def _read_sfmbot() -> BotSnapshot:
         })
 
     equity = usdc + deployed
+    # Drawdown proxy: equity vs baseline (no equity_peak in sfm_state.json).
+    dd_pct = min(0.0, (equity - _SFMBOT_BASELINE) / _SFMBOT_BASELINE * 100) if _SFMBOT_BASELINE > 0 else 0.0
 
     total_trades   = int(state.get("total_trades",   0))
     winning_trades = int(state.get("winning_trades", 0))
-    win_rate       = (winning_trades / total_trades * 100) if total_trades > 0 else 0.0
+    win_rate       = (winning_trades / total_trades * 100) if total_trades > 0 else -1.0
 
     return BotSnapshot(
         name="sfmbot",
         equity=equity,
         cash=usdc,
         deployed_usd=deployed,
-        dd_pct=0.0,        # sfmbot does not track drawdown_pct
+        dd_pct=dd_pct,
         open_positions=positions_out,
         realized_pnl=rpnl,
         total_trades=total_trades,
@@ -262,17 +266,19 @@ def _read_alpacabot() -> BotSnapshot:
 
     # Equity: baseline + realized PnL (live equity from Alpaca API tracked by portfolio module)
     equity = _ALPACA_BASELINE + rpnl
+    # Drawdown proxy: equity vs baseline (no equity_peak in alpaca_state.json).
+    dd_pct = min(0.0, (equity - _ALPACA_BASELINE) / _ALPACA_BASELINE * 100) if _ALPACA_BASELINE > 0 else 0.0
 
     total_trades   = int(state.get("total_trades",   0))
     winning_trades = int(state.get("winning_trades", 0))
-    win_rate       = (winning_trades / total_trades * 100) if total_trades > 0 else 0.0
+    win_rate       = (winning_trades / total_trades * 100) if total_trades > 0 else -1.0
 
     return BotSnapshot(
         name="alpacabot",
         equity=equity,
         cash=max(equity - deployed, 0.0),
         deployed_usd=deployed,
-        dd_pct=0.0,        # alpacabot does not track drawdown_pct
+        dd_pct=dd_pct,
         open_positions=positions_out,
         realized_pnl=rpnl,
         total_trades=total_trades,
@@ -304,10 +310,14 @@ def read_unified_portfolio() -> UnifiedPortfolio:
     # Equity (stocks) = alpacabot deployed
     equity_exposure = alpaca.deployed_usd
 
-    # Weighted drawdown from available dd_pct fields
-    # Only enzobot tracks dd; use its equity weight for the blended figure
+    # Weighted drawdown across all three bots (baseline-weighted).
+    # sfm/alpaca use a baseline-anchored proxy (no equity_peak in their state files).
     total_baseline = _ENZOBOT_BASELINE + _SFMBOT_BASELINE + _ALPACA_BASELINE
-    total_dd_pct   = (enzo.dd_pct * _ENZOBOT_BASELINE / total_baseline) if total_baseline > 0 else 0.0
+    total_dd_pct   = (
+        enzo.dd_pct   * _ENZOBOT_BASELINE +
+        sfm.dd_pct    * _SFMBOT_BASELINE  +
+        alpaca.dd_pct * _ALPACA_BASELINE
+    ) / total_baseline if total_baseline > 0 else 0.0
 
     all_positions = enzo.open_positions + sfm.open_positions + alpaca.open_positions
 
@@ -411,14 +421,15 @@ def format_unified_for_prompt(u: UnifiedPortfolio) -> str:
     def bot_line(snap: Optional[BotSnapshot], label: str) -> str:
         if snap is None:
             return f"  {label}: UNAVAILABLE"
-        status = "" if snap.ok else " [OFFLINE]"
-        age    = _fmt_age(snap.state_age_sec)
-        pos_s  = _fmt_positions(snap.open_positions)
+        status  = "" if snap.ok else " [OFFLINE]"
+        age     = _fmt_age(snap.state_age_sec)
+        pos_s   = _fmt_positions(snap.open_positions)
+        win_str = f"{snap.win_rate:.0f}%" if snap.win_rate >= 0 else "N/A"
         return (
             f"  {label}:{status}\n"
             f"    eq=${snap.equity:,.2f}  cash=${snap.cash:,.2f}  deployed=${snap.deployed_usd:,.2f}"
             f"  dd={snap.dd_pct:.1f}%  state={age}\n"
-            f"    trades={snap.total_trades}  winrate={snap.win_rate:.0f}%"
+            f"    trades={snap.total_trades}  winrate={win_str}"
             f"  realized_pnl=${snap.realized_pnl:+,.2f}\n"
             f"    positions=[{pos_s}]"
         )

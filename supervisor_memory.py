@@ -29,9 +29,16 @@ log = logging.getLogger("supervisor_memory")
 BASE_DIR      = os.path.dirname(os.path.abspath(__file__))
 OUTCOMES_FILE = os.path.join(BASE_DIR, "brain_outcomes.jsonl")
 PENDING_FILE  = os.path.join(BASE_DIR, "brain_pending.json")
+_EXEC_LOG     = os.path.join(BASE_DIR, "execution_log.jsonl")
 
-# Threshold: equity change > this % is considered meaningful
+# Threshold: equity change > this % is considered meaningful (equity-delta fallback only)
 SIGNAL_THRESHOLD = 0.15
+
+# Fill PnL threshold — moves below this are treated as noise
+_FILL_PNL_THRESHOLD = 1.0
+
+# Map bot name in execution_log.jsonl to sleeve key
+_BOT_TO_SLEEVE = {"enzo": "kraken", "sfm": "sfm", "alpaca": "alpaca"}
 
 
 @dataclass
@@ -57,27 +64,47 @@ class BrainOutcome:
     overall_verdict: str   # CORRECT | WRONG | MIXED | NEUTRAL
 
 
-def _verdict(mode: str, chg_pct: float) -> tuple[str, str]:
+def _verdict(mode: str, chg_pct: float,
+             had_fills: bool = False, fill_pnl_usd: float = 0.0) -> tuple[str, str]:
     """
     Determine if the decision was correct given the outcome.
+
+    Primary signal: fill PnL when fills occurred in the decision window.
+      had_fills  — True if any execution_log entry matched this sleeve in the window.
+                   Tracked separately from fill_pnl_usd because BUY fills legitimately
+                   log pnl_usd=0.0, so zero pnl alone does not mean no fills occurred.
+      fill_pnl_usd — sum of pnl_usd for matched fills (may be 0.0 on BUY-only windows).
+
+    Fallback: equity delta, retained in reasoning for observability; never drives verdict.
+
     Returns (verdict, reasoning).
     """
-    defensive = mode in ("SCOUT", "DEFENSE")
-    sig = abs(chg_pct) >= SIGNAL_THRESHOLD
+    eq_fallback = f"equity delta {chg_pct:+.2f}% (fallback, not scored)"
+    defensive   = mode in ("SCOUT", "DEFENSE")
 
-    if not sig:
-        return "NEUTRAL", f"equity flat ({chg_pct:+.2f}%) — no clear signal"
+    if had_fills:
+        if fill_pnl_usd > _FILL_PNL_THRESHOLD:
+            if not defensive:
+                return "CORRECT", (
+                    f"NORMAL mode captured fill pnl ${fill_pnl_usd:+.2f} | {eq_fallback}"
+                )
+            else:
+                return "NEUTRAL", (
+                    f"fills in cautious mode — not conclusive "
+                    f"(pnl ${fill_pnl_usd:+.2f}) | {eq_fallback}"
+                )
+        elif fill_pnl_usd < -_FILL_PNL_THRESHOLD:
+            return "WRONG", (
+                f"fill pnl ${fill_pnl_usd:+.2f} in {mode} mode | {eq_fallback}"
+            )
+        else:
+            return "NEUTRAL", (
+                f"fills occurred but pnl within noise threshold "
+                f"(${fill_pnl_usd:+.2f}) | {eq_fallback}"
+            )
 
-    if defensive and chg_pct < -SIGNAL_THRESHOLD:
-        return "CORRECT", f"cautious mode protected capital ({chg_pct:+.2f}%)"
-    if defensive and chg_pct > SIGNAL_THRESHOLD:
-        return "WRONG", f"too cautious — missed {chg_pct:+.2f}% gain"
-    if not defensive and chg_pct > SIGNAL_THRESHOLD:
-        return "CORRECT", f"NORMAL mode captured {chg_pct:+.2f}% gain"
-    if not defensive and chg_pct < -SIGNAL_THRESHOLD:
-        return "WRONG", f"too aggressive — lost {chg_pct:+.2f}% in NORMAL mode"
-
-    return "NEUTRAL", f"mixed signal ({chg_pct:+.2f}%)"
+    # No fills in decision window — no execution evidence; equity delta is not scored
+    return "NEUTRAL", f"no fills in decision window | {eq_fallback}"
 
 
 def save_pending(decision: dict, portfolio) -> None:
@@ -116,11 +143,26 @@ def evaluate_and_log(portfolio) -> Optional[BrainOutcome]:
     if not os.path.exists(PENDING_FILE):
         return None
 
+    # Atomically claim the pending file before scoring.
+    # Prevents a crash between evaluate_and_log() and save_pending() from causing
+    # the same stale snapshot to be re-scored against a later equity value on restart.
+    _scoring_path = PENDING_FILE + ".scoring"
     try:
-        with open(PENDING_FILE, encoding="utf-8") as f:
+        os.replace(PENDING_FILE, _scoring_path)
+    except Exception as exc:
+        log.error("Failed to claim pending file for scoring: %s", exc)
+        return None
+
+    try:
+        with open(_scoring_path, encoding="utf-8") as f:
             pending = json.load(f)
     except Exception as exc:
         log.error("Failed to load pending: %s", exc)
+        # Restore so the snapshot is not permanently lost
+        try:
+            os.replace(_scoring_path, PENDING_FILE)
+        except Exception:
+            pass
         return None
 
     sleeves_now = portfolio.sleeves
@@ -134,6 +176,35 @@ def evaluate_and_log(portfolio) -> Optional[BrainOutcome]:
         "alpaca": ("alpaca_stocks", "alpaca"),
     }
 
+    # ── Scan execution log for fills within the decision window ─────────
+    scoring_ts = datetime.now(timezone.utc)
+    try:
+        window_start = datetime.fromisoformat(decision_ts)
+    except (ValueError, TypeError):
+        window_start = scoring_ts  # unparseable ts — no fills will match
+
+    sleeve_had_fills = {k: False for k in sleeve_map}
+    sleeve_fill_pnl  = {k: 0.0   for k in sleeve_map}
+    try:
+        if os.path.exists(_EXEC_LOG):
+            with open(_EXEC_LOG, encoding="utf-8") as f:
+                for raw_line in f:
+                    raw_line = raw_line.strip()
+                    if not raw_line:
+                        continue
+                    try:
+                        entry   = json.loads(raw_line)
+                        exec_ts = datetime.fromisoformat(entry["ts"])
+                        if window_start <= exec_ts <= scoring_ts:
+                            sleeve = _BOT_TO_SLEEVE.get(entry.get("bot", ""))
+                            if sleeve in sleeve_had_fills:
+                                sleeve_had_fills[sleeve] = True
+                                sleeve_fill_pnl[sleeve] += float(entry.get("pnl_usd", 0.0))
+                    except Exception:
+                        continue  # malformed line — skip
+    except Exception as exc:
+        log.warning("[MEMORY] Could not read execution log for scoring: %s", exc)
+
     outcomes = []
     verdicts = []
 
@@ -146,7 +217,11 @@ def evaluate_and_log(portfolio) -> Optional[BrainOutcome]:
         mode        = dec.get("mode", "NORMAL")
         size_mult   = float(dec.get("size_mult", 1.0))
 
-        verdict, reasoning = _verdict(mode, chg_pct)
+        verdict, reasoning = _verdict(
+            mode, chg_pct,
+            had_fills=sleeve_had_fills[key],
+            fill_pnl_usd=sleeve_fill_pnl[key],
+        )
         verdicts.append(verdict)
 
         outcomes.append(SleeveOutcome(
@@ -173,7 +248,7 @@ def evaluate_and_log(portfolio) -> Optional[BrainOutcome]:
 
     outcome = BrainOutcome(
         decision_ts=decision_ts,
-        outcome_ts=datetime.now(timezone.utc).isoformat(),
+        outcome_ts=scoring_ts.isoformat(),
         total_before=total_before,
         total_after=total_after,
         total_chg_pct=total_chg,
@@ -215,6 +290,12 @@ def evaluate_and_log(portfolio) -> Optional[BrainOutcome]:
     except Exception as exc:
         log.error("Failed to log outcome: %s", exc)
 
+    # Remove the claimed scoring file — outcome has been written to brain_outcomes.jsonl
+    try:
+        os.remove(_scoring_path)
+    except Exception:
+        pass
+
     return outcome
 
 
@@ -236,9 +317,9 @@ def load_recent_outcomes(n: int = 8) -> List[dict]:
 def format_outcomes_for_prompt(outcomes: List[dict]) -> str:
     """Format outcome history into a readable block for Claude's prompt."""
     if not outcomes:
-        return "  No outcome history yet — this is an early decision."
+        return "  No outcome history yet — this is an early decision.\n  (scoring method: scored by fill PnL where fills occurred; NEUTRAL where no fills (equity delta in reasoning only))"
 
-    lines = []
+    lines = ["  (scoring method: scored by fill PnL where fills occurred; NEUTRAL where no fills (equity delta in reasoning only))"]
     for o in outcomes:
         ts      = o.get("decision_ts", "")[:16]
         overall = o.get("overall_verdict", "?")
@@ -254,10 +335,5 @@ def format_outcomes_for_prompt(outcomes: List[dict]) -> str:
         lines.append(
             f"  {ts} | portfolio {chg:+.2f}% | {overall} | {' | '.join(sleeve_parts)}"
         )
-
-    # Summary stats
-    verdicts     = [o.get("overall_verdict") for o in outcomes]
-    correct_rate = verdicts.count("CORRECT") / len(verdicts) * 100 if verdicts else 0
-    lines.append(f"  Accuracy: {correct_rate:.0f}% correct over last {len(outcomes)} decisions")
 
     return "\n".join(lines)

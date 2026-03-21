@@ -42,16 +42,20 @@ SUPERVISOR_DIR = os.path.dirname(os.path.abspath(__file__))
 SELFHEAL_LOG  = os.path.join(SUPERVISOR_DIR, "selfheal_log.jsonl")
 
 # ── Safe bounds — Opus cannot set values outside these ───────────────
-SAFE_BOUNDS = {
+# Split by executor: policy keys must not pass through the env executor and vice versa.
+POLICY_SAFE_BOUNDS = {
     # policy.json — attack_rules
-    "attack_rules.max_dd_pct":        (2.0,  8.0),
-    "attack_rules.max_daily_loss_pct":(1.0,  5.0),
+    "attack_rules.max_dd_pct":         (2.0,  8.0),
+    "attack_rules.max_daily_loss_pct": (1.0,  5.0),
     # policy.json — defend_rules
-    "defend_rules.dd_pct_trigger":    (4.0, 12.0),
-    # env vars
-    "ADX_MIN_ENTRY":                  (8.0,  20.0),
-    "MIN_SCORE_TO_TRADE":             (48.0, 70.0),
-    "SCORE_DROP_EXIT":                (4.0,  15.0),
+    "defend_rules.dd_pct_trigger":     (4.0, 12.0),
+}
+
+ENV_SAFE_BOUNDS = {
+    # .env variables
+    "ADX_MIN_ENTRY":      (8.0,  20.0),
+    "MIN_SCORE_TO_TRADE": (48.0, 70.0),
+    "SCORE_DROP_EXIT":    (4.0,  15.0),
 }
 
 # Cooldown: don't self-heal the same anomaly code twice within N minutes
@@ -133,8 +137,8 @@ RULES
 ═══════════════════════════════════════════
 - Only prescribe actions that directly address the detected anomalies
 - For ADX_THRESHOLD_TOO_HIGH: lower ADX_MIN_ENTRY by 2-3 points, not more
-- For ATTACK_DD_TOO_TIGHT: raise attack_rules.max_dd_pct by 1-2 points max
-- For BRAIN_CHURN: write_supervisor_cmd to HOLD for 2 cycles to let brain settle
+- For ATTACK_DD_TOO_TIGHT: verify the DD figure matches supervisor_report.json sleeve drawdown_pct before acting. Only raise attack_rules.max_dd_pct by 1-2 points if the DD is confirmed from that trusted source. Never recommend resetting the DD baseline or HWM unless DD is confirmed from supervisor_report.json
+- For BRAIN_CHURN: do NOT write another DEFENSE/HOLD command — DEFENSE blocks entries but does not stop the internal Enzobot parameter loop (paper_boss_v1), which continues thrashing regardless. Instead, use alert_human with severity MEDIUM. Include the changes_today count, confirm that DEFENSE cannot resolve parameter thrashing, and state that a policy-level fix is required.
 - For STALE_LOCK: clear_lock first, then restart_bot if cycle is frozen
 - For CYCLE_FROZEN: restart_bot only after verifying lock is cleared
 - For ENTRY_DROUGHT without other anomalies: do NOT force entries — market may just be choppy
@@ -173,13 +177,13 @@ def _execute_adjust_policy_json(action: dict, cycle: int):
     value = action.get("value")
     reason = action.get("reason", "")
 
-    if key not in SAFE_BOUNDS:
-        msg = f"REJECTED: key '{key}' not in safe bounds list"
+    if key not in POLICY_SAFE_BOUNDS:
+        msg = f"REJECTED: key '{key}' not in policy safe bounds list"
         log.warning("[SELFHEAL] %s", msg)
         _log_action(action, msg, cycle)
         return
 
-    lo, hi = SAFE_BOUNDS[key]
+    lo, hi = POLICY_SAFE_BOUNDS[key]
     try:
         value = float(value)
     except Exception:
@@ -224,13 +228,13 @@ def _execute_adjust_env(action: dict, cycle: int):
     value  = str(action.get("value", ""))
     reason = action.get("reason", "")
 
-    if key not in SAFE_BOUNDS:
-        msg = f"REJECTED: env key '{key}' not in safe bounds list"
+    if key not in ENV_SAFE_BOUNDS:
+        msg = f"REJECTED: env key '{key}' not in env safe bounds list"
         log.warning("[SELFHEAL] %s", msg)
         _log_action(action, msg, cycle)
         return
 
-    lo, hi = SAFE_BOUNDS[key]
+    lo, hi = ENV_SAFE_BOUNDS[key]
     try:
         num_val = float(value)
         num_val = max(lo, min(hi, num_val))

@@ -137,17 +137,21 @@ def read_sfmbot() -> SleeveState:
         notes.append(f"Open SFM position: {pos.get('sfm_qty',0):,.0f} tokens")
     notes.append("Liquidity: $40k — max $100 per trade")
 
+    # Drawdown proxy: how far equity is below baseline.
+    # sfm_state.json has no equity_peak, so this is baseline-anchored, not peak-anchored.
+    dd_pct = min(0.0, (equity - SFMBOT_BASELINE) / SFMBOT_BASELINE * 100) if SFMBOT_BASELINE > 0 else 0.0
+
     return SleeveState(
         name="sfm_tactical",
         equity_usd=equity,
         baseline_usd=SFMBOT_BASELINE,
         pnl_usd=pnl_usd,
         pnl_pct=pnl_pct,
-        drawdown_pct=0.0,      # not tracked by sfmbot
+        drawdown_pct=dd_pct,
         open_positions=open_ct,
         mode="PAPER",
         cycle=cycle,
-        health=_health(pnl_pct, 0),
+        health=_health(pnl_pct, dd_pct),
         notes=notes,
     )
 
@@ -179,17 +183,21 @@ def read_alpacabot() -> SleeveState:
     if open_ct == 0:
         notes.append("Flat — waiting for market hours / signal")
 
+    # Drawdown proxy: how far equity is below baseline.
+    # alpaca_state.json has no equity_peak, so this is baseline-anchored, not peak-anchored.
+    dd_pct = min(0.0, pnl_usd / ALPACA_BASELINE * 100) if ALPACA_BASELINE > 0 else 0.0
+
     return SleeveState(
         name="alpaca_stocks",
         equity_usd=equity,
         baseline_usd=ALPACA_BASELINE,
         pnl_usd=pnl_usd,
         pnl_pct=pnl_pct,
-        drawdown_pct=0.0,
+        drawdown_pct=dd_pct,
         open_positions=open_ct,
         mode="PAPER",
         cycle=cycle,
-        health=_health(pnl_pct, 0),
+        health=_health(pnl_pct, dd_pct),
         notes=notes,
     )
 
