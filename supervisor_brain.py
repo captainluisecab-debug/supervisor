@@ -476,7 +476,7 @@ def run_brain(portfolio, regime, history_tail: list) -> BrainDecision:
     _write_enzobot_command(k_cmd)
 
     # Save equity snapshot + decision — scored on next brain call
-    save_pending(raw, portfolio)
+    save_pending(raw, portfolio, regime=regime)
 
     log.info("[BRAIN] kraken=%s %.1fx | sfm=%s %.1fx | alpaca=%s %.1fx",
              k_cmd.get("mode"), k_cmd.get("size_mult"),

@@ -107,7 +107,7 @@ def _verdict(mode: str, chg_pct: float,
     return "NEUTRAL", f"no fills in decision window | {eq_fallback}"
 
 
-def save_pending(decision: dict, portfolio) -> None:
+def save_pending(decision: dict, portfolio, regime=None) -> None:
     """
     Save current equity snapshot + decision before it takes effect.
     Called immediately after Claude's decision is written.
@@ -126,6 +126,13 @@ def save_pending(decision: dict, portfolio) -> None:
             "alpaca": sleeves.get("alpaca_stocks").equity_usd if sleeves.get("alpaca_stocks") else 0,
             "total":  portfolio.total_equity,
         },
+        "regime": {
+            "label": regime.regime,
+            "confidence": round(regime.confidence, 2),
+            "btc_7d_pct": round(regime.btc_7d_pct, 1),
+            "spy_vol_10d": round(regime.spy_vol_10d, 2),
+            "vix": round(regime.vix, 1),
+        } if regime else None,
     }
     try:
         with open(PENDING_FILE, "w", encoding="utf-8") as f:
@@ -165,10 +172,11 @@ def evaluate_and_log(portfolio) -> Optional[BrainOutcome]:
             pass
         return None
 
-    sleeves_now = portfolio.sleeves
-    eq_before   = pending.get("equity_before", {})
-    decision    = pending.get("decision", {})
-    decision_ts = pending.get("ts", "")
+    sleeves_now       = portfolio.sleeves
+    eq_before         = pending.get("equity_before", {})
+    decision          = pending.get("decision", {})
+    decision_ts       = pending.get("ts", "")
+    regime_at_decision = pending.get("regime")  # dict or None
 
     sleeve_map = {
         "kraken": ("kraken_crypto", "kraken"),
@@ -263,6 +271,7 @@ def evaluate_and_log(portfolio) -> Optional[BrainOutcome]:
             "outcome_ts":     outcome.outcome_ts,
             "total_chg_pct":  round(total_chg, 3),
             "overall_verdict": overall,
+            "regime": regime_at_decision,
             "sleeves": [
                 {
                     "sleeve":       o.sleeve,
@@ -325,6 +334,8 @@ def format_outcomes_for_prompt(outcomes: List[dict]) -> str:
         overall = o.get("overall_verdict", "?")
         chg     = o.get("total_chg_pct", 0)
         sleeves = o.get("sleeves", [])
+        regime  = o.get("regime")
+        regime_tag = f"[{regime['label']}]" if regime and regime.get("label") else "[regime:?]"
 
         sleeve_parts = []
         for s in sleeves:
@@ -333,7 +344,7 @@ def format_outcomes_for_prompt(outcomes: List[dict]) -> str:
             )
 
         lines.append(
-            f"  {ts} | portfolio {chg:+.2f}% | {overall} | {' | '.join(sleeve_parts)}"
+            f"  {ts} {regime_tag} | portfolio {chg:+.2f}% | {overall} | {' | '.join(sleeve_parts)}"
         )
 
     return "\n".join(lines)
