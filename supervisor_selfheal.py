@@ -358,6 +358,16 @@ def _execute_restart_bot(action: dict, cycle: int):
     bot    = action.get("bot", "enzobot")
     reason = action.get("reason", "selfheal")
 
+    # TEMPORARILY SUPPRESSED (2026-03-24): selfheal restart loop was preventing
+    # lockout clearance (68 restarts/day resetting cycle counter). DEFEND transition
+    # approved by operator but cannot activate while restarts keep firing.
+    # Anomaly detection and logging continue. Only the restart action is suppressed.
+    # Remove this block to re-enable restart_bot.
+    msg = f"SUPPRESSED: restart_bot for {bot} — selfheal restart temporarily disabled | {reason}"
+    log.warning("[SELFHEAL] %s", msg)
+    _log_action(action, msg, cycle)
+    return
+
     bot_dirs = {"enzobot": ENZOBOT_DIR, "sfmbot": SFMBOT_DIR, "alpacabot": ALPACA_DIR}
     bot_dir  = bot_dirs.get(bot, ENZOBOT_DIR)
     flag     = os.path.join(bot_dir, "RESTART_REQUESTED.flag")
