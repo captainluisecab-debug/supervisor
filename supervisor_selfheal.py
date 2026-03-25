@@ -264,12 +264,11 @@ def _execute_adjust_env(action: dict, cycle: int):
         with open(env_path, "w", encoding="utf-8") as f:
             f.writelines(new_lines)
 
-        # Write restart flag so watchdog picks up new env
-        restart_flag = os.path.join(bot_dirs.get(bot, ENZOBOT_DIR), "RESTART_REQUESTED.flag")
-        with open(restart_flag, "w") as f:
-            f.write(f"selfheal:{key}={value}:{reason}")
-
-        msg = f"OK: {bot} .env {key}={value} | {reason} | restart flag written"
+        # RESTART FLAG REMOVED (2026-03-25): adjust_env was writing restart flags
+        # that bypassed the restart_bot suppression, causing a restart loop that
+        # prevented stable mode transitions. The .env change is written and will
+        # take effect on the next organic restart. No forced restart.
+        msg = f"OK: {bot} .env {key}={value} | {reason} | no restart (suppressed)"
         log.info("[SELFHEAL] env: %s", msg)
         _log_action(action, msg, cycle)
 
