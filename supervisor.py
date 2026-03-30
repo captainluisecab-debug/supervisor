@@ -57,6 +57,7 @@ from supervisor_calendar import get_calendar
 from supervisor_anomaly import AnomalyDetector
 from supervisor_selfheal import run_selfheal
 from supervisor_escalation import check_escalations
+from supervisor_governor import run_governor
 
 
 def _dynamic_brain_interval(regime, portfolio) -> int:
@@ -198,6 +199,12 @@ def _run_cycle(cycle: int, peak_equity: float, anomaly_detector: AnomalyDetector
         healed = run_selfheal(anomaly_report, portfolio_summary, regime_summary, cycle)
         if healed:
             log.info("[SELFHEAL] %d action(s) executed this cycle", healed)
+
+    # 5b. Governor — local deterministic control (Phase 1: shadow mode)
+    try:
+        gov_decisions = run_governor(cycle)
+    except Exception as exc:
+        log.error("[GOVERNOR] error: %s", exc)
 
     # 6. Report
     report = build_report(portfolio, regime, cycle, new_peak)
