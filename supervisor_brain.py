@@ -446,7 +446,7 @@ def run_brain(portfolio, regime, history_tail: list) -> BrainDecision:
 
     # PHASE 1: Change-detection gate — skip Claude if nothing material changed
     _current_regime = regime.regime if regime else None
-    _current_dd_bucket = int(portfolio.total_drawdown_pct) if portfolio.total_drawdown_pct else 0
+    _current_dd_bucket = int(portfolio.total_dd_pct) if hasattr(portfolio, 'total_dd_pct') else 0
     _now = time.time()
     _regime_changed = _current_regime != _last_regime_label
     _dd_crossed = _current_dd_bucket != _last_dd_bucket
