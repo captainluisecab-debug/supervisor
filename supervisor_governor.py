@@ -414,11 +414,14 @@ def evaluate_kraken(enzo_state: dict, exits: List[dict], cycle: int) -> List[Gov
             reason=f"Expectancy={expectancy:.2f} < {EXPECTANCY_FREEZE_THRESHOLD} — overrides regime",
             shadow=SHADOW_MODE, metrics=metrics,
         ))
-        # Expectancy override: even in TRADE mode, freeze if expectancy is negative
+        # Expectancy override: freeze entries, preserve force_flatten from regime decision
+        _exp_flatten = (regime_mode == "FLAT")
         _write_command_file(CMD_KRAKEN, "DEFENSE", 0.0, False,
-                            f"Governor: negative expectancy override", "kraken")
+                            f"Governor: negative expectancy override", "kraken",
+                            force_flatten=_exp_flatten)
         _write_command_file(CMD_ENZO, "DEFENSE", 0.0, False,
-                            f"Governor: negative expectancy override", "kraken")
+                            f"Governor: negative expectancy override", "kraken",
+                            force_flatten=_exp_flatten)
 
     if dd_rate < -DD_ACCEL_THRESHOLD_PER_HOUR:
         decisions.append(GovernorDecision(
