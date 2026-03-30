@@ -438,6 +438,16 @@ def run_selfheal(report: AnomalyReport, portfolio_summary: str,
         log.info("[SELFHEAL] All anomalies on cooldown — skipping")
         return 0
 
+    # PHASE 1: Opus call DISABLED — detect and log only, no auto-prescribe.
+    # Every selfheal prescription caused harm (parameter thrash, restart loops).
+    # Anomalies are logged for operator review. Re-enable by removing this block.
+    for a in active:
+        log.warning("[SELFHEAL] ANOMALY DETECTED (no auto-action): %s — %s", a.code, a.description[:120])
+        _log_action({"type": "detected", "anomaly": a.code, "description": a.description[:200]},
+                     f"DETECTED — no auto-prescribe (Phase 1)", cycle)
+        _mark_cooldown(a.code)
+    return 0
+
     log.info("[SELFHEAL] Calling Opus to diagnose %d anomalies: %s",
              len(active), ", ".join(a.code for a in active))
 

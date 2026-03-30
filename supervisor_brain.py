@@ -402,11 +402,24 @@ def _write_enzobot_command(kraken_cmd: dict) -> None:
 
 # ── Main entry point ─────────────────────────────────────────────────
 
+_last_brain_decision: Optional[BrainDecision] = None
+_last_regime_label: Optional[str] = None
+_last_dd_bucket: Optional[int] = None   # DD rounded to nearest 1%
+_last_call_ts: float = 0.0
+_BRAIN_BACKSTOP_SEC = 21600  # force a call every 6 hours regardless
+
+
 def run_brain(portfolio, regime, history_tail: list) -> BrainDecision:
     """
     Call Claude with full portfolio context. Write command files.
     Returns BrainDecision. On failure, writes safe defaults.
+
+    PHASE 1: Claude call is gated — only fires when regime changes, DD crosses
+    a 1% boundary, an anomaly is active, or 6 hours have passed. Otherwise reuses
+    the cached decision. Reduces calls from 96-288/day to ~4-8/day.
     """
+    global _last_brain_decision, _last_regime_label, _last_dd_bucket, _last_call_ts
+
     if not ANTHROPIC_API_KEY:
         log.warning("ANTHROPIC_API_KEY not set — writing safe defaults")
         _write_defaults("no api key")
@@ -430,6 +443,26 @@ def run_brain(portfolio, regime, history_tail: list) -> BrainDecision:
             "[MEMORY] Previous decision scored: %s | portfolio %+.2f%%",
             outcome.overall_verdict, outcome.total_chg_pct,
         )
+
+    # PHASE 1: Change-detection gate — skip Claude if nothing material changed
+    _current_regime = regime.regime if regime else None
+    _current_dd_bucket = int(portfolio.total_drawdown_pct) if portfolio.total_drawdown_pct else 0
+    _now = time.time()
+    _regime_changed = _current_regime != _last_regime_label
+    _dd_crossed = _current_dd_bucket != _last_dd_bucket
+    _backstop = (_now - _last_call_ts) >= _BRAIN_BACKSTOP_SEC
+
+    if _last_brain_decision and not _regime_changed and not _dd_crossed and not _backstop:
+        log.info("[BRAIN] No material change — reusing cached decision (regime=%s dd=%d%%)",
+                 _current_regime, _current_dd_bucket)
+        return _last_brain_decision
+
+    if _regime_changed:
+        log.info("[BRAIN] Regime changed: %s -> %s — calling Claude", _last_regime_label, _current_regime)
+    elif _dd_crossed:
+        log.info("[BRAIN] DD crossed boundary: %d%% -> %d%% — calling Claude", _last_dd_bucket or 0, _current_dd_bucket)
+    elif _backstop:
+        log.info("[BRAIN] 6h backstop — calling Claude")
 
     # Fetch all intelligence signals once — passed to prompt builder
     corr_snap      = check_correlation()
@@ -484,8 +517,13 @@ def run_brain(portfolio, regime, history_tail: list) -> BrainDecision:
              a_cmd.get("mode"), a_cmd.get("size_mult"))
     log.info("[BRAIN] %s", note)
 
-    return BrainDecision(
+    _result = BrainDecision(
         kraken=k_cmd, sfm=s_cmd, alpaca=a_cmd,
         portfolio_note=note,
         ts=datetime.now(timezone.utc).isoformat(),
     )
+    _last_brain_decision = _result
+    _last_regime_label = _current_regime
+    _last_dd_bucket = _current_dd_bucket
+    _last_call_ts = _now
+    return _result
