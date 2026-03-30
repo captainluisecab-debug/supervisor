@@ -215,7 +215,8 @@ def get_regime_behavior(dominant_regime: str) -> dict:
 
 
 def _write_command_file(path: str, mode: str, size_mult: float,
-                        entry_allowed: bool, reasoning: str, bot: str) -> None:
+                        entry_allowed: bool, reasoning: str, bot: str,
+                        force_flatten: bool = False) -> None:
     """Write a command file for a bot sleeve. Only used when SHADOW_MODE=False."""
     if SHADOW_MODE:
         return
@@ -223,6 +224,7 @@ def _write_command_file(path: str, mode: str, size_mult: float,
         "mode": mode,
         "size_mult": round(size_mult, 2),
         "entry_allowed": entry_allowed,
+        "force_flatten": force_flatten,
         "reasoning": reasoning,
         "bot": bot,
         "ts": datetime.now(timezone.utc).isoformat(),
@@ -375,11 +377,11 @@ def evaluate_kraken(enzo_state: dict, exits: List[dict], cycle: int) -> List[Gov
             reason=f"Regime={dominant} -> FLAT mode. No entries. Reduce all positions toward cash.",
             shadow=SHADOW_MODE, metrics=metrics,
         ))
-        # Write DEFENSE command with entry_allowed=False
+        # Write DEFENSE command with force_flatten=True — close all positions
         _write_command_file(CMD_KRAKEN, "DEFENSE", 0.0, False,
-                            f"Governor FLAT: {dominant}", "kraken")
+                            f"Governor FLAT: {dominant}", "kraken", force_flatten=True)
         _write_command_file(CMD_ENZO, "DEFENSE", 0.0, False,
-                            f"Governor FLAT: {dominant}", "kraken")
+                            f"Governor FLAT: {dominant}", "kraken", force_flatten=True)
 
     elif regime_mode == "REDUCE":
         # RANGING/VOLATILE: no new entries, actively reduce exposure
@@ -470,7 +472,7 @@ def evaluate_sfm(sfm_state: dict, cycle: int, supervisor_regime: str) -> List[Go
             shadow=SHADOW_MODE, metrics=metrics,
         ))
         _write_command_file(CMD_SFM, "DEFENSE", 0.0, False,
-                            f"Governor FLAT: {supervisor_regime}", "sfm")
+                            f"Governor FLAT: {supervisor_regime}", "sfm", force_flatten=True)
     elif regime_mode == "REDUCE":
         decisions.append(GovernorDecision(
             ts=now_iso, cycle=cycle, action="REDUCE_EXPOSURE", sleeve="sfm",
@@ -527,7 +529,7 @@ def evaluate_alpaca(alpaca_state: dict, cycle: int, supervisor_regime: str) -> L
             shadow=SHADOW_MODE, metrics=metrics,
         ))
         _write_command_file(CMD_ALPACA, "DEFENSE", 0.0, False,
-                            f"Governor FLAT: {supervisor_regime}", "alpaca")
+                            f"Governor FLAT: {supervisor_regime}", "alpaca", force_flatten=True)
     elif regime_mode == "REDUCE":
         decisions.append(GovernorDecision(
             ts=now_iso, cycle=cycle, action="REDUCE_EXPOSURE", sleeve="alpaca",
