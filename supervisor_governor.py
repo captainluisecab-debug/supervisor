@@ -29,7 +29,7 @@ from typing import List, Optional, Dict
 log = logging.getLogger("governor")
 
 # ── Config ────────────────────────────────────────────────────────────
-SHADOW_MODE = True  # True = log only, False = live authority
+SHADOW_MODE = False  # True = log only, False = live authority (enabled 2026-03-30)
 
 BASE_DIR       = os.path.dirname(os.path.abspath(__file__))
 DECISIONS_FILE = os.path.join(BASE_DIR, "governor_decisions.jsonl")
