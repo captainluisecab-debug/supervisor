@@ -352,8 +352,8 @@ def _write_command(path: str, cmd: dict, bot: str) -> None:
 
 
 def _write_defaults(reason: str = "fallback") -> None:
-    for path, bot in [(CMD_KRAKEN, "kraken"), (CMD_SFM, "sfm"), (CMD_ALPACA, "alpaca")]:
-        _write_command(path, {**SAFE_DEFAULT, "reasoning": reason}, bot)
+    # DISABLED — governor owns command files. Brain fallback no longer writes.
+    log.info("[BRAIN] fallback triggered (%s) — logged only, governor owns commands", reason)
 
 
 # ── Enzobot command bridge ───────────────────────────────────────────
@@ -501,12 +501,13 @@ def run_brain(portfolio, regime, history_tail: list) -> BrainDecision:
                 )
                 cmd["size_mult"] = capped
 
-    _write_command(CMD_KRAKEN, dict(k_cmd), "kraken")
-    _write_command(CMD_SFM,    dict(s_cmd), "sfm")
-    _write_command(CMD_ALPACA, dict(a_cmd), "alpaca")
-
-    # Wire Enzobot: translate mode to supervisor_command.json format
-    _write_enzobot_command(k_cmd)
+    # COMMAND WRITES DISABLED — governor is the single source of truth for command files.
+    # Brain still runs for advisory, logging, and outcome scoring. It does not write commands.
+    # Emergency stop (kill switch) still writes directly — defense-in-depth.
+    # _write_command(CMD_KRAKEN, dict(k_cmd), "kraken")
+    # _write_command(CMD_SFM,    dict(s_cmd), "sfm")
+    # _write_command(CMD_ALPACA, dict(a_cmd), "alpaca")
+    # _write_enzobot_command(k_cmd)
 
     # Save equity snapshot + decision — scored on next brain call
     save_pending(raw, portfolio, regime=regime)
