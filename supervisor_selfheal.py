@@ -223,6 +223,11 @@ def _execute_adjust_policy_json(action: dict, cycle: int):
 
 
 def _execute_adjust_env(action: dict, cycle: int):
+    # DISABLED — governor owns runtime. .env is operator-write-only.
+    log.warning("[SELFHEAL] adjust_env SUPPRESSED: %s", json.dumps(action)[:120])
+    _log_action(action, "SUPPRESSED — governor owns runtime", cycle)
+    return
+
     bot    = action.get("bot", "enzobot")
     key    = action.get("key", "")
     value  = str(action.get("value", ""))
@@ -309,6 +314,11 @@ def _execute_clear_lock(action: dict, cycle: int):
 
 
 def _execute_write_supervisor_cmd(action: dict, cycle: int):
+    # DISABLED — governor is the single command file writer.
+    log.warning("[SELFHEAL] write_supervisor_cmd SUPPRESSED: %s", json.dumps(action)[:120])
+    _log_action(action, "SUPPRESSED — governor owns commands", cycle)
+    return
+
     # Normalize bot name — Opus may return "enzobot"/"sfmbot"/"alpacabot"
     _bot_alias = {"enzobot": "kraken", "sfmbot": "sfm", "alpacabot": "alpaca"}
     bot    = _bot_alias.get(action.get("bot", "kraken"), action.get("bot", "kraken"))

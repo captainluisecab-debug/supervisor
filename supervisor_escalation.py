@@ -208,7 +208,15 @@ def _write_response(bot: str, opus_result: dict, request: dict):
 
 
 def _apply_opus_actions(bot: str, actions: list, cycle: int):
-    """Apply immediate actions Opus prescribed — mode overrides, capital reallocation."""
+    """DISABLED — governor is the single live authority for command files.
+    Opus escalation actions are logged for review only, not executed.
+    Governor owns all command files and .env is operator-write-only."""
+    for action in actions:
+        log.warning("[ESCALATION] ACTION SUPPRESSED (governor owns commands): %s -> %s",
+                    bot, json.dumps(action)[:120])
+    return
+
+    # Original code below — unreachable until re-enabled.
     from supervisor_selfheal import (
         _execute_write_supervisor_cmd, _execute_adjust_policy_json,
         _execute_adjust_env, _log_action,
