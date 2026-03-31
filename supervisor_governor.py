@@ -468,14 +468,21 @@ def evaluate_sfm(sfm_state: dict, cycle: int, supervisor_regime: str) -> List[Go
 
     decisions = []
 
-    if regime_mode == "FLAT" and has_position:
-        decisions.append(GovernorDecision(
-            ts=now_iso, cycle=cycle, action="FORCE_FLAT", sleeve="sfm",
-            reason=f"Regime={supervisor_regime} -> FLAT. Position should be closed.",
-            shadow=SHADOW_MODE, metrics=metrics,
-        ))
+    if regime_mode == "FLAT":
+        if has_position:
+            decisions.append(GovernorDecision(
+                ts=now_iso, cycle=cycle, action="FORCE_FLAT", sleeve="sfm",
+                reason=f"Regime={supervisor_regime} -> FLAT. Position should be closed.",
+                shadow=SHADOW_MODE, metrics=metrics,
+            ))
+        else:
+            decisions.append(GovernorDecision(
+                ts=now_iso, cycle=cycle, action="HOLD_FLAT", sleeve="sfm",
+                reason=f"Regime={supervisor_regime} -> FLAT. Already flat. Holding cash.",
+                shadow=SHADOW_MODE, metrics=metrics,
+            ))
         _write_command_file(CMD_SFM, "DEFENSE", 0.0, False,
-                            f"Governor FLAT: {supervisor_regime}", "sfm", force_flatten=True)
+                            f"Governor FLAT: {supervisor_regime}", "sfm", force_flatten=has_position)
     elif regime_mode == "REDUCE":
         decisions.append(GovernorDecision(
             ts=now_iso, cycle=cycle, action="REDUCE_EXPOSURE", sleeve="sfm",
@@ -497,6 +504,8 @@ def evaluate_sfm(sfm_state: dict, cycle: int, supervisor_regime: str) -> List[Go
             ts=now_iso, cycle=cycle, action="HOLD", sleeve="sfm",
             reason="Monitor only", shadow=SHADOW_MODE, metrics=metrics,
         ))
+        _write_command_file(CMD_SFM, "SCOUT", 0.5, False,
+                            f"Governor HOLD: default cautious", "sfm")
 
     return decisions
 
@@ -563,6 +572,8 @@ def evaluate_alpaca(alpaca_state: dict, cycle: int, supervisor_regime: str) -> L
             ts=now_iso, cycle=cycle, action="HOLD", sleeve="alpaca",
             reason="Monitor only", shadow=SHADOW_MODE, metrics=metrics,
         ))
+        _write_command_file(CMD_ALPACA, "SCOUT", 0.5, False,
+                            f"Governor HOLD: default cautious", "alpaca")
 
     return decisions
 
