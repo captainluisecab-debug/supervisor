@@ -99,6 +99,52 @@ _exit_history: List[dict] = []     # recent exits from fills
 _last_governor_ts: float = 0
 _regime_history: List[tuple] = []  # [(ts, dominant_regime)]
 
+# Opus 12h brief
+UNIVERSE_BRIEF_FILE = os.path.join(BASE_DIR, "governor_universe_brief.json")
+OPUS_REPORT_FILE    = os.path.join(BASE_DIR, "opus_12h_report.md")
+
+
+def _write_universe_brief(decisions, enzo, sfm, alpaca, regime, brain_note):
+    """Write a structured universe brief for Opus 12h review."""
+    effective = {}
+    for d in decisions:
+        if d.sleeve not in effective or d.action not in ("HOLD", "HOLD_FLAT"):
+            effective[d.sleeve] = d.action
+
+    brief = {
+        "ts": datetime.now(timezone.utc).isoformat(),
+        "dominant_regime": regime,
+        "effective_posture": effective,
+        "kraken": {
+            "equity": enzo.get("equity", 0),
+            "dd_pct": enzo.get("dd_pct", 0),
+            "mode": enzo.get("mode", "?"),
+            "open_positions": enzo.get("open_positions", 0),
+            "cash": enzo.get("cash", 0),
+        },
+        "sfm": {
+            "equity": sfm.get("equity", 0),
+            "dd_pct": sfm.get("dd_pct", 0),
+            "open_position": sfm.get("open_position", False),
+        },
+        "alpaca": {
+            "equity": alpaca.get("equity", 0),
+            "realized_pnl": alpaca.get("realized_pnl", 0),
+            "win_rate": alpaca.get("winning_trades", 0) / max(alpaca.get("total_trades", 1), 1) * 100,
+            "open_positions": alpaca.get("open_positions", 0),
+        },
+        "brain_advisory": brain_note[:200] if brain_note else "",
+        "governor_decisions": [
+            {"sleeve": d.sleeve, "action": d.action, "reason": d.reason[:100]}
+            for d in decisions if d.action not in ("HOLD", "HOLD_FLAT")
+        ],
+    }
+    try:
+        with open(UNIVERSE_BRIEF_FILE, "w", encoding="utf-8") as f:
+            json.dump(brief, f, indent=2)
+    except Exception as exc:
+        log.error("[GOVERNOR] Failed to write universe brief: %s", exc)
+
 
 # ── Data readers ──────────────────────────────────────────────────────
 
@@ -242,8 +288,12 @@ def _write_command_file(path: str, mode: str, size_mult: float,
 # ── Metric computation ────────────────────────────────────────────────
 
 def compute_rolling_expectancy(exits: List[dict], n: int = 20) -> float:
-    """Compute rolling expectancy from last N exits."""
-    recent = exits[-n:] if len(exits) >= n else exits
+    """Compute rolling expectancy from last N trading exits.
+    Excludes governor_force_flatten exits — those are deliberate capital
+    preservation, not trading failures."""
+    # Filter out force_flatten exits
+    trading_exits = [e for e in exits if e.get("exit_reason") != "governor_force_flatten"]
+    recent = trading_exits[-n:] if len(trading_exits) >= n else trading_exits
     if not recent:
         return 0.0
     wins = [e["pnl_usd"] for e in recent if e.get("pnl_usd", 0) > 0]
@@ -594,6 +644,10 @@ def run_governor(cycle: int) -> List[GovernorDecision]:
     sfm = _read_sfm_state()
     alpaca = _read_alpaca_state()
 
+    # Read brain advisory (input only — governor decides, brain advises)
+    brain_advisory = _read_json(os.path.join(BASE_DIR, "supervisor_report.json"))
+    _brain_note = brain_advisory.get("brain_note", "")
+
     # Determine dominant regime from Kraken pair data (most granular source)
     kraken_pair_regime = enzo.get("pair_regime", {})
     dominant_regime = classify_dominant_regime(kraken_pair_regime)
@@ -609,9 +663,20 @@ def run_governor(cycle: int) -> List[GovernorDecision]:
     # Log all decisions
     for d in all_decisions:
         _log_decision(d)
-        if d.action != "HOLD":
+        if d.action not in ("HOLD", "HOLD_FLAT"):
             prefix = "[SHADOW]" if d.shadow else "[LIVE]"
             log.info("[GOVERNOR] %s %s on %s: %s", prefix, d.action, d.sleeve, d.reason)
+
+    # Effective state summary — one clear line showing what each sleeve is actually doing
+    _effective = {}
+    for d in all_decisions:
+        if d.sleeve not in _effective or d.action not in ("HOLD", "HOLD_FLAT"):
+            _effective[d.sleeve] = d.action
+    _eff_str = " | ".join(f"{s}={a}" for s, a in sorted(_effective.items()))
+    log.info("[GOVERNOR] EFFECTIVE: %s", _eff_str)
+
+    # Write universe brief for Opus 12h review
+    _write_universe_brief(all_decisions, enzo, sfm, alpaca, dominant_regime, _brain_note)
 
     _last_governor_ts = time.time()
     return all_decisions

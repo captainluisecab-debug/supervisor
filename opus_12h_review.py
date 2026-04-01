@@ -1,0 +1,181 @@
+"""
+opus_12h_review.py — Scheduled Opus review at 9:00 AM and 9:00 PM.
+
+Reads the governor's universe brief, sends a structured context packet to
+Opus via claude -p --bare, and writes the response as a report for the operator.
+
+Schedule: Run via Windows Task Scheduler or cron at 09:00 and 21:00 local time.
+Cost: ~$0.10-0.30 per call. 2 calls/day max.
+
+Mode: REPORT/SHADOW first. Opus recommends but does not execute.
+Set EXECUTE_MINOR_FIXES = True only after operator approves the auto-fix scope.
+"""
+import json
+import os
+import subprocess
+import sys
+import time
+from datetime import datetime, timezone
+
+BASE_DIR = os.path.dirname(os.path.abspath(__file__))
+BRIEF_FILE  = os.path.join(BASE_DIR, "governor_universe_brief.json")
+REPORT_FILE = os.path.join(BASE_DIR, "opus_12h_report.md")
+DECISIONS_LOG = os.path.join(BASE_DIR, "governor_decisions.jsonl")
+OUTCOMES_LOG  = os.path.join(BASE_DIR, "brain_outcomes.jsonl")
+
+EXECUTE_MINOR_FIXES = False  # True = Opus can auto-fix minor issues. False = report only.
+
+
+def read_brief():
+    try:
+        with open(BRIEF_FILE, encoding="utf-8") as f:
+            return json.load(f)
+    except Exception:
+        return {}
+
+
+def read_recent_decisions(n=50):
+    try:
+        with open(DECISIONS_LOG, encoding="utf-8") as f:
+            lines = f.readlines()
+        return [json.loads(l.strip()) for l in lines[-n:] if l.strip()]
+    except Exception:
+        return []
+
+
+def read_recent_outcomes(n=10):
+    try:
+        with open(OUTCOMES_LOG, encoding="utf-8") as f:
+            lines = f.readlines()
+        return [json.loads(l.strip()) for l in lines[-n:] if l.strip()]
+    except Exception:
+        return []
+
+
+def build_prompt(brief, decisions, outcomes):
+    now = datetime.now(timezone.utc).isoformat()
+
+    # Count decision types in last 12h
+    twelve_h_ago = time.time() - 43200
+    recent = [d for d in decisions if d.get("ts", "") > now[:10]]  # rough filter
+
+    action_counts = {}
+    for d in recent:
+        a = d.get("action", "?")
+        action_counts[a] = action_counts.get(a, 0) + 1
+
+    return f"""You are the Opus strategic reviewer for an autonomous multi-bot trading system.
+This is your scheduled 12-hour review. You receive this report twice daily at 9:00 AM and 9:00 PM.
+
+CURRENT UNIVERSE STATE:
+{json.dumps(brief, indent=2)}
+
+GOVERNOR DECISION SUMMARY (last 12h):
+{json.dumps(action_counts, indent=2)}
+
+RECENT OUTCOMES:
+{json.dumps(outcomes[-5:], indent=2) if outcomes else "No recent outcomes."}
+
+BRAIN ADVISORY (last cycle):
+{brief.get("brain_advisory", "none")}
+
+YOUR TASK:
+1. Review the last 12 hours of system behavior.
+2. Identify any loopholes, bugs, communication issues, or missed opportunities.
+3. Identify anything blocking good trades or causing unnecessary losses.
+4. Recommend fixes — classify each as MINOR (auto-fixable) or MAJOR (needs operator approval).
+5. Produce a clear operator status report.
+
+RULES:
+- You are the strategic authority. Governor handles deterministic live control.
+- You may approve MINOR fixes (parameter adjustments within existing bounds, log cleanup, threshold tweaks).
+- MAJOR changes (new strategy logic, architecture changes, config/policy rewrites) require operator approval.
+- Default on uncertainty: HOLD / no change.
+- If nothing materially changed: report "No material change. System operating as designed."
+
+RESPOND WITH:
+1. UNIVERSE STATUS (2-3 sentences)
+2. ISSUES FOUND (list, or "None")
+3. RECOMMENDED FIXES (list with MINOR/MAJOR classification, or "None")
+4. OPERATOR ACTION NEEDED (yes/no + what)
+5. NEXT 12H OUTLOOK (1-2 sentences)
+"""
+
+
+def call_opus(prompt):
+    """Call Opus via claude CLI."""
+    try:
+        result = subprocess.run(
+            ["claude", "-p", "--bare", "--model", "opus"],
+            input=prompt,
+            capture_output=True,
+            text=True,
+            timeout=120,
+        )
+        if result.returncode == 0 and result.stdout.strip():
+            return result.stdout.strip()
+        else:
+            return f"ERROR: claude returned code {result.returncode}\n{result.stderr[:500]}"
+    except FileNotFoundError:
+        return "ERROR: claude CLI not found in PATH"
+    except subprocess.TimeoutExpired:
+        return "ERROR: claude call timed out after 120s"
+    except Exception as exc:
+        return f"ERROR: {exc}"
+
+
+def write_report(response, brief):
+    """Write the Opus report as markdown."""
+    now = datetime.now(timezone.utc).strftime("%Y-%m-%d %H:%M UTC")
+    report = f"""# Opus 12-Hour Review — {now}
+
+## Universe Snapshot
+- Regime: {brief.get("dominant_regime", "?")}
+- Effective posture: {json.dumps(brief.get("effective_posture", {}))}
+- Kraken: ${brief.get("kraken", {}).get("equity", 0):.2f} (DD {brief.get("kraken", {}).get("dd_pct", 0):.1f}%)
+- SFM: ${brief.get("sfm", {}).get("equity", 0):.2f}
+- Alpaca: ${brief.get("alpaca", {}).get("equity", 0):.2f}
+
+## Opus Analysis
+
+{response}
+
+---
+*Generated by opus_12h_review.py | Execute mode: {"AUTO-FIX" if EXECUTE_MINOR_FIXES else "REPORT ONLY"}*
+"""
+    try:
+        with open(REPORT_FILE, "w", encoding="utf-8") as f:
+            f.write(report)
+        print(f"Report written to {REPORT_FILE}")
+    except Exception as exc:
+        print(f"Failed to write report: {exc}")
+
+
+def main():
+    print(f"Opus 12h review starting at {datetime.now(timezone.utc).isoformat()}")
+
+    brief = read_brief()
+    if not brief:
+        print("No universe brief found. Governor may not be running.")
+        return
+
+    decisions = read_recent_decisions(50)
+    outcomes = read_recent_outcomes(10)
+
+    prompt = build_prompt(brief, decisions, outcomes)
+    print(f"Prompt built ({len(prompt)} chars). Calling Opus...")
+
+    response = call_opus(prompt)
+    print(f"Opus response received ({len(response)} chars)")
+
+    write_report(response, brief)
+
+    if EXECUTE_MINOR_FIXES:
+        print("EXECUTE_MINOR_FIXES is True — auto-fix path not yet implemented")
+        # Future: parse response for MINOR fixes and apply them
+    else:
+        print("Report mode only — no auto-fixes applied")
+
+
+if __name__ == "__main__":
+    main()
