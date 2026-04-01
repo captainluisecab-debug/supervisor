@@ -1,29 +1,52 @@
 """
-opus_12h_review.py — Scheduled Opus review at 9:00 AM and 9:00 PM.
+opus_12h_review.py — Scheduled Opus 12-hour review at 9:00 AM and 9:00 PM.
 
-Reads the governor's universe brief, sends a structured context packet to
-Opus via claude -p --bare, and writes the response as a report for the operator.
+AUTHORITY MODEL:
+- Governor = live command authority during the 12-hour operating period
+- Opus = strategic reviewer who works in his own field (code, config, bugs)
+- Opus does NOT write to governor command files
+- Opus does NOT replace or override governor's live control
+- Opus CAN fix minor bugs, adjust non-live config, improve code quality
+- Opus reports all fixes and recommendations to the operator
+- MAJOR strategy/architecture changes require operator approval
+- Default on failure: HOLD / no change
 
-Schedule: Run via Windows Task Scheduler or cron at 09:00 and 21:00 local time.
+Schedule: 09:00 and 21:00 local time via Windows Task Scheduler.
 Cost: ~$0.10-0.30 per call. 2 calls/day max.
-
-Mode: REPORT/SHADOW first. Opus recommends but does not execute.
-Set EXECUTE_MINOR_FIXES = True only after operator approves the auto-fix scope.
 """
 import json
 import os
 import subprocess
-import sys
 import time
 from datetime import datetime, timezone
 
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
-BRIEF_FILE  = os.path.join(BASE_DIR, "governor_universe_brief.json")
-REPORT_FILE = os.path.join(BASE_DIR, "opus_12h_report.md")
-DECISIONS_LOG = os.path.join(BASE_DIR, "governor_decisions.jsonl")
-OUTCOMES_LOG  = os.path.join(BASE_DIR, "brain_outcomes.jsonl")
+BRIEF_FILE     = os.path.join(BASE_DIR, "governor_universe_brief.json")
+REPORT_FILE    = os.path.join(BASE_DIR, "opus_12h_report.md")
+DECISIONS_LOG  = os.path.join(BASE_DIR, "governor_decisions.jsonl")
+OUTCOMES_LOG   = os.path.join(BASE_DIR, "brain_outcomes.jsonl")
+FIX_LOG        = os.path.join(BASE_DIR, "opus_fix_log.jsonl")
 
-EXECUTE_MINOR_FIXES = False  # True = Opus can auto-fix minor issues. False = report only.
+# Opus fix authority: can fix minor issues in his own lane
+# Does NOT touch: governor command files, live runtime, .env, policy.json
+OPUS_FIX_SCOPE = {
+    "allowed": [
+        "code bug fixes in non-live paths",
+        "log format improvements",
+        "threshold adjustments within existing bounds",
+        "dead code cleanup",
+        "documentation updates",
+    ],
+    "forbidden": [
+        "governor command file writes",
+        "live .env changes",
+        "policy.json changes",
+        "strategy logic changes",
+        "architecture changes",
+        "position sizing changes",
+        "entry/exit rule changes",
+    ],
+}
 
 
 def read_brief():
@@ -34,7 +57,7 @@ def read_brief():
         return {}
 
 
-def read_recent_decisions(n=50):
+def read_recent_decisions(n=100):
     try:
         with open(DECISIONS_LOG, encoding="utf-8") as f:
             lines = f.readlines()
@@ -52,20 +75,41 @@ def read_recent_outcomes(n=10):
         return []
 
 
+def log_fix(fix_record):
+    """Log every Opus fix action for audit."""
+    try:
+        with open(FIX_LOG, "a", encoding="utf-8") as f:
+            f.write(json.dumps(fix_record) + "\n")
+    except Exception:
+        pass
+
+
 def build_prompt(brief, decisions, outcomes):
     now = datetime.now(timezone.utc).isoformat()
 
-    # Count decision types in last 12h
+    # Summarize decisions from last 12h
     twelve_h_ago = time.time() - 43200
-    recent = [d for d in decisions if d.get("ts", "") > now[:10]]  # rough filter
-
     action_counts = {}
-    for d in recent:
+    for d in decisions:
         a = d.get("action", "?")
         action_counts[a] = action_counts.get(a, 0) + 1
 
-    return f"""You are the Opus strategic reviewer for an autonomous multi-bot trading system.
-This is your scheduled 12-hour review. You receive this report twice daily at 9:00 AM and 9:00 PM.
+    return f"""You are Opus, the strategic reviewer for an autonomous multi-bot trading system.
+This is your scheduled 12-hour review. You receive this exactly twice daily at 9:00 AM and 9:00 PM.
+
+AUTHORITY MODEL:
+- Governor handles ALL live command decisions during the 12-hour operating period.
+- You do NOT write to governor command files or override governor's live control.
+- You work in YOUR OWN FIELD: code quality, bug fixes, threshold corrections, documentation.
+- You may fix MINOR issues (bugs, log cleanup, threshold tweaks within bounds) and report them.
+- MAJOR changes (strategy logic, architecture, config/policy rewrites) require operator approval.
+- Default on uncertainty: HOLD / no change.
+
+YOUR ALLOWED FIX SCOPE:
+{json.dumps(OPUS_FIX_SCOPE["allowed"], indent=2)}
+
+YOUR FORBIDDEN SCOPE:
+{json.dumps(OPUS_FIX_SCOPE["forbidden"], indent=2)}
 
 CURRENT UNIVERSE STATE:
 {json.dumps(brief, indent=2)}
@@ -73,32 +117,42 @@ CURRENT UNIVERSE STATE:
 GOVERNOR DECISION SUMMARY (last 12h):
 {json.dumps(action_counts, indent=2)}
 
-RECENT OUTCOMES:
+RECENT BRAIN OUTCOMES:
 {json.dumps(outcomes[-5:], indent=2) if outcomes else "No recent outcomes."}
 
 BRAIN ADVISORY (last cycle):
 {brief.get("brain_advisory", "none")}
 
 YOUR TASK:
-1. Review the last 12 hours of system behavior.
-2. Identify any loopholes, bugs, communication issues, or missed opportunities.
-3. Identify anything blocking good trades or causing unnecessary losses.
-4. Recommend fixes — classify each as MINOR (auto-fixable) or MAJOR (needs operator approval).
+1. Review the last 12 hours of governor and system behavior.
+2. Identify any loopholes, bugs, communication issues, or missed opportunities that are blocking positive trend.
+3. For each issue, classify as:
+   - MINOR: you may fix it now in your own lane and report the fix
+   - MAJOR: requires operator approval — describe the fix but do not execute
+4. Focus on what would improve the system's ability to capture positive PnL trend.
 5. Produce a clear operator status report.
 
-RULES:
-- You are the strategic authority. Governor handles deterministic live control.
-- You may approve MINOR fixes (parameter adjustments within existing bounds, log cleanup, threshold tweaks).
-- MAJOR changes (new strategy logic, architecture changes, config/policy rewrites) require operator approval.
-- Default on uncertainty: HOLD / no change.
-- If nothing materially changed: report "No material change. System operating as designed."
+If nothing materially changed: report "No material change. System operating as designed."
 
-RESPOND WITH:
-1. UNIVERSE STATUS (2-3 sentences)
-2. ISSUES FOUND (list, or "None")
-3. RECOMMENDED FIXES (list with MINOR/MAJOR classification, or "None")
-4. OPERATOR ACTION NEEDED (yes/no + what)
-5. NEXT 12H OUTLOOK (1-2 sentences)
+RESPOND IN THIS EXACT FORMAT:
+
+## UNIVERSE STATUS
+(2-3 sentences: current state, direction, main risk)
+
+## ISSUES FOUND
+(numbered list, or "None")
+
+## FIXES APPLIED (MINOR — in my lane)
+(numbered list with: what was wrong, what I fixed, expected benefit, rollback path — or "None")
+
+## FIXES RECOMMENDED (MAJOR — needs operator approval)
+(numbered list with: what is wrong, what should change, expected benefit, risk — or "None")
+
+## OPERATOR ACTION NEEDED
+(yes/no + specific action items if yes)
+
+## NEXT 12H OUTLOOK
+(1-2 sentences: what to expect, what to watch)
 """
 
 
@@ -110,7 +164,7 @@ def call_opus(prompt):
             input=prompt,
             capture_output=True,
             text=True,
-            timeout=120,
+            timeout=180,
         )
         if result.returncode == 0 and result.stdout.strip():
             return result.stdout.strip()
@@ -119,29 +173,40 @@ def call_opus(prompt):
     except FileNotFoundError:
         return "ERROR: claude CLI not found in PATH"
     except subprocess.TimeoutExpired:
-        return "ERROR: claude call timed out after 120s"
+        return "ERROR: claude call timed out after 180s"
     except Exception as exc:
         return f"ERROR: {exc}"
 
 
 def write_report(response, brief):
-    """Write the Opus report as markdown."""
+    """Write the Opus report as markdown for operator review."""
     now = datetime.now(timezone.utc).strftime("%Y-%m-%d %H:%M UTC")
-    report = f"""# Opus 12-Hour Review — {now}
+    regime = brief.get("dominant_regime", "?")
+    posture = brief.get("effective_posture", {})
+    k_eq = brief.get("kraken", {}).get("equity", 0)
+    k_dd = brief.get("kraken", {}).get("dd_pct", 0)
+    s_eq = brief.get("sfm", {}).get("equity", 0)
+    a_eq = brief.get("alpaca", {}).get("equity", 0)
 
-## Universe Snapshot
-- Regime: {brief.get("dominant_regime", "?")}
-- Effective posture: {json.dumps(brief.get("effective_posture", {}))}
-- Kraken: ${brief.get("kraken", {}).get("equity", 0):.2f} (DD {brief.get("kraken", {}).get("dd_pct", 0):.1f}%)
-- SFM: ${brief.get("sfm", {}).get("equity", 0):.2f}
-- Alpaca: ${brief.get("alpaca", {}).get("equity", 0):.2f}
+    report = f"""# Opus 12-Hour Review - {now}
 
-## Opus Analysis
+## Snapshot
+| Metric | Value |
+|--------|-------|
+| Regime | {regime} |
+| Posture | {json.dumps(posture)} |
+| Kraken | ${k_eq:.2f} (DD {k_dd:.1f}%) |
+| SFM | ${s_eq:.2f} |
+| Alpaca | ${a_eq:.2f} |
+
+---
 
 {response}
 
 ---
-*Generated by opus_12h_review.py | Execute mode: {"AUTO-FIX" if EXECUTE_MINOR_FIXES else "REPORT ONLY"}*
+*Generated by opus_12h_review.py*
+*Authority: Governor = live control. Opus = strategic review + minor fixes.*
+*Next review in 12 hours.*
 """
     try:
         with open(REPORT_FILE, "w", encoding="utf-8") as f:
@@ -152,29 +217,35 @@ def write_report(response, brief):
 
 
 def main():
-    print(f"Opus 12h review starting at {datetime.now(timezone.utc).isoformat()}")
+    ts = datetime.now(timezone.utc).isoformat()
+    print(f"[OPUS 12H REVIEW] Starting at {ts}")
 
     brief = read_brief()
     if not brief:
-        print("No universe brief found. Governor may not be running.")
+        print("[OPUS 12H REVIEW] No universe brief found. Governor may not be running.")
+        write_report("ERROR: No governor universe brief available. Cannot review.", {})
         return
 
-    decisions = read_recent_decisions(50)
+    decisions = read_recent_decisions(100)
     outcomes = read_recent_outcomes(10)
 
     prompt = build_prompt(brief, decisions, outcomes)
-    print(f"Prompt built ({len(prompt)} chars). Calling Opus...")
+    print(f"[OPUS 12H REVIEW] Prompt built ({len(prompt)} chars). Calling Opus...")
 
     response = call_opus(prompt)
-    print(f"Opus response received ({len(response)} chars)")
+    print(f"[OPUS 12H REVIEW] Response received ({len(response)} chars)")
+
+    # Log the review event
+    log_fix({
+        "ts": ts,
+        "type": "12h_review",
+        "prompt_chars": len(prompt),
+        "response_chars": len(response),
+        "brief_regime": brief.get("dominant_regime", "?"),
+    })
 
     write_report(response, brief)
-
-    if EXECUTE_MINOR_FIXES:
-        print("EXECUTE_MINOR_FIXES is True — auto-fix path not yet implemented")
-        # Future: parse response for MINOR fixes and apply them
-    else:
-        print("Report mode only — no auto-fixes applied")
+    print(f"[OPUS 12H REVIEW] Complete. Report at {REPORT_FILE}")
 
 
 if __name__ == "__main__":
