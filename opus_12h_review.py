@@ -127,10 +127,14 @@ YOUR TASK:
 1. Review the last 12 hours of governor and system behavior.
 2. Identify any loopholes, bugs, communication issues, or missed opportunities that are blocking positive trend.
 3. For each issue, classify as:
-   - MINOR: you may fix it now in your own lane and report the fix
-   - MAJOR: requires operator approval — describe the fix but do not execute
+   - MINOR: FIX IT NOW using your file tools (Read/Edit/Write). You have execution authority on minor fixes. Then report what you fixed.
+   - MAJOR: requires operator approval — describe the fix but do NOT execute it.
 4. Focus on what would improve the system's ability to capture positive PnL trend.
-5. Produce a clear operator status report.
+5. After making any fixes, produce a clear operator status report.
+
+You have tool access to read and edit Python files across all bot directories.
+You may NOT write to: command files (*_cmd.json), .env, policy.json, brain_state.json, or any runtime state file.
+You may NOT restart services. Fixes take effect on next natural restart.
 
 If nothing materially changed: report "No material change. System operating as designed."
 
@@ -157,14 +161,18 @@ RESPOND IN THIS EXACT FORMAT:
 
 
 def call_opus(prompt):
-    """Call Opus via claude CLI."""
+    """Call Opus via claude CLI with tool access for minor fixes.
+    Uses claude -p (not --bare) so Opus can Read/Write/Edit files
+    for minor fixes in its own lane. Does not have access to governor
+    command files or live runtime state files."""
     try:
         result = subprocess.run(
-            ["claude", "-p", "--bare", "--model", "opus"],
+            ["claude", "-p", "--model", "opus"],
             input=prompt,
             capture_output=True,
             text=True,
-            timeout=180,
+            timeout=600,  # 10 min — Opus may need to read/write files
+            cwd=BASE_DIR,
         )
         if result.returncode == 0 and result.stdout.strip():
             return result.stdout.strip()
@@ -173,7 +181,7 @@ def call_opus(prompt):
     except FileNotFoundError:
         return "ERROR: claude CLI not found in PATH"
     except subprocess.TimeoutExpired:
-        return "ERROR: claude call timed out after 180s"
+        return "ERROR: claude call timed out after 600s"
     except Exception as exc:
         return f"ERROR: {exc}"
 
