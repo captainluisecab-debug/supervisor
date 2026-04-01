@@ -91,7 +91,8 @@ DEFAULT_BEHAVIOR = REGIME_BEHAVIOR["RANGING"]  # conservative default
 CMD_KRAKEN  = os.path.join(BASE_DIR, "commands", "kraken_cmd.json")
 CMD_SFM     = os.path.join(BASE_DIR, "commands", "sfm_cmd.json")
 CMD_ALPACA  = os.path.join(BASE_DIR, "commands", "alpaca_cmd.json")
-CMD_ENZO    = os.path.join(ENZOBOT_DIR, "supervisor_command.json")
+# CMD_ENZO removed — governor was writing in wrong format, enzobot brain ignored it.
+# Engine reads force_flatten from kraken_cmd.json (CMD_KRAKEN). That path works.
 
 # ── State ─────────────────────────────────────────────────────────────
 _equity_history: List[tuple] = []  # [(ts, equity), ...]
@@ -430,8 +431,6 @@ def evaluate_kraken(enzo_state: dict, exits: List[dict], cycle: int) -> List[Gov
         # Write DEFENSE command with force_flatten=True — close all positions
         _write_command_file(CMD_KRAKEN, "DEFENSE", 0.0, False,
                             f"Governor FLAT: {dominant}", "kraken", force_flatten=True)
-        _write_command_file(CMD_ENZO, "DEFENSE", 0.0, False,
-                            f"Governor FLAT: {dominant}", "kraken", force_flatten=True)
 
     elif regime_mode == "REDUCE":
         # RANGING/VOLATILE: no new entries, actively reduce exposure
@@ -442,8 +441,6 @@ def evaluate_kraken(enzo_state: dict, exits: List[dict], cycle: int) -> List[Gov
         ))
         _write_command_file(CMD_KRAKEN, "SCOUT", 0.0, False,
                             f"Governor REDUCE: {dominant}", "kraken")
-        _write_command_file(CMD_ENZO, "SCOUT", 0.0, False,
-                            f"Governor REDUCE: {dominant}", "kraken")
 
     elif regime_mode == "TRADE":
         # TRENDING_UP: allow entries at full size
@@ -453,8 +450,6 @@ def evaluate_kraken(enzo_state: dict, exits: List[dict], cycle: int) -> List[Gov
             shadow=SHADOW_MODE, metrics=metrics,
         ))
         _write_command_file(CMD_KRAKEN, "NORMAL", behavior["size_mult"], True,
-                            f"Governor TRADE: {dominant}", "kraken")
-        _write_command_file(CMD_ENZO, "NORMAL", behavior["size_mult"], True,
                             f"Governor TRADE: {dominant}", "kraken")
 
     # ── Metric-driven overrides (tighten-only, override regime if worse) ──
@@ -467,9 +462,6 @@ def evaluate_kraken(enzo_state: dict, exits: List[dict], cycle: int) -> List[Gov
         # Expectancy override: freeze entries, preserve force_flatten from regime decision
         _exp_flatten = (regime_mode == "FLAT")
         _write_command_file(CMD_KRAKEN, "DEFENSE", 0.0, False,
-                            f"Governor: negative expectancy override", "kraken",
-                            force_flatten=_exp_flatten)
-        _write_command_file(CMD_ENZO, "DEFENSE", 0.0, False,
                             f"Governor: negative expectancy override", "kraken",
                             force_flatten=_exp_flatten)
 
