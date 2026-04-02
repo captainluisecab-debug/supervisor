@@ -515,7 +515,4 @@ def run_brain(portfolio, regime, history_tail: list) -> BrainDecision:
         ts=datetime.now(timezone.utc).isoformat(),
     )
     _last_brain_decision = _result
-    _last_regime_label = _current_regime
-    _last_dd_bucket = _current_dd_bucket
-    _last_call_ts = _now
     return _result
