@@ -99,6 +99,10 @@ _equity_history: List[tuple] = []  # [(ts, equity), ...]
 _exit_history: List[dict] = []     # recent exits from fills
 _last_governor_ts: float = 0
 _regime_history: List[tuple] = []  # [(ts, dominant_regime)]
+_posture_outcomes: List[dict] = [] # [{posture, equity_start, equity_end, duration, correct}]
+
+# Feedback loop file — persists posture outcomes across restarts
+POSTURE_OUTCOMES_FILE = os.path.join(BASE_DIR, "governor_posture_outcomes.jsonl")
 
 # Opus 12h brief
 UNIVERSE_BRIEF_FILE = os.path.join(BASE_DIR, "governor_universe_brief.json")
@@ -152,6 +156,70 @@ def _write_universe_brief(decisions, enzo, sfm, alpaca, regime, brain_note):
             json.dump(brief, f, indent=2)
     except Exception as exc:
         log.error("[GOVERNOR] Failed to write universe brief: %s", exc)
+
+
+# ── Feedback loop ─────────────────────────────────────────────────────
+
+_last_posture_snapshot: Optional[dict] = None
+
+
+def _score_posture_outcome(current_equity: float, current_posture: str) -> Optional[dict]:
+    """Score the previous posture period by comparing equity change with posture.
+    Returns an outcome record or None if not enough data."""
+    global _last_posture_snapshot
+    now = time.time()
+
+    if _last_posture_snapshot is None:
+        _last_posture_snapshot = {
+            "posture": current_posture, "equity": current_equity, "ts": now
+        }
+        return None
+
+    prev = _last_posture_snapshot
+    duration_min = (now - prev["ts"]) / 60
+
+    # Only score if posture changed or 60+ minutes elapsed
+    if current_posture == prev["posture"] and duration_min < 60:
+        return None
+
+    equity_delta = current_equity - prev["equity"]
+    prev_posture = prev["posture"]
+
+    # Score: was the posture correct given the outcome?
+    if prev_posture == "FLAT" and equity_delta < -5:
+        verdict = "CORRECT"  # Flat and market went down — good call
+    elif prev_posture == "FLAT" and equity_delta > 5:
+        verdict = "WRONG"    # Flat but market went up — missed gains
+    elif prev_posture == "TRADE" and equity_delta > 0:
+        verdict = "CORRECT"  # Trading and made money
+    elif prev_posture == "TRADE" and equity_delta < -5:
+        verdict = "WRONG"    # Trading and lost money
+    else:
+        verdict = "NEUTRAL"  # Small moves, inconclusive
+
+    outcome = {
+        "ts": datetime.now(timezone.utc).isoformat(),
+        "posture": prev_posture,
+        "duration_min": round(duration_min, 1),
+        "equity_start": round(prev["equity"], 2),
+        "equity_end": round(current_equity, 2),
+        "equity_delta": round(equity_delta, 2),
+        "verdict": verdict,
+    }
+
+    # Log to persistent file
+    try:
+        with open(POSTURE_OUTCOMES_FILE, "a", encoding="utf-8") as f:
+            f.write(json.dumps(outcome) + "\n")
+    except Exception:
+        pass
+
+    # Update snapshot
+    _last_posture_snapshot = {
+        "posture": current_posture, "equity": current_equity, "ts": now
+    }
+
+    return outcome
 
 
 # ── Data readers ──────────────────────────────────────────────────────
@@ -675,6 +743,15 @@ def run_governor(cycle: int) -> List[GovernorDecision]:
             _effective[d.sleeve] = d.action
     _eff_str = " | ".join(f"{s}={a}" for s, a in sorted(_effective.items()))
     log.info("[GOVERNOR] EFFECTIVE: %s", _eff_str)
+
+    # Feedback loop: score the previous posture period
+    _total_equity = enzo.get("equity", 0) + sfm.get("equity", 0) + alpaca.get("equity", 0)
+    _dominant_posture = _effective.get("kraken", "UNKNOWN")
+    _outcome = _score_posture_outcome(_total_equity, _dominant_posture)
+    if _outcome:
+        log.info("[GOVERNOR] POSTURE SCORED: %s for %dm -> %s ($%+.2f)",
+                 _outcome["posture"], _outcome["duration_min"],
+                 _outcome["verdict"], _outcome["equity_delta"])
 
     # Write universe brief for Opus 12h review
     _write_universe_brief(all_decisions, enzo, sfm, alpaca, dominant_regime, _brain_note)
