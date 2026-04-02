@@ -457,10 +457,10 @@ def run_selfheal(report: AnomalyReport, portfolio_summary: str,
     for a in active:
         if a.code in new_codes:
             log.warning("[SELFHEAL] NEW ANOMALY (no auto-action): %s — %s", a.code, a.description[:120])
-    run_selfheal._prev_active_codes = current_codes
-        _log_action({"type": "detected", "anomaly": a.code, "description": a.description[:200]},
-                     f"DETECTED — no auto-prescribe (Phase 1)", cycle)
+            _log_action({"type": "detected", "anomaly": a.code, "description": a.description[:200]},
+                         f"DETECTED — no auto-prescribe (Phase 1)", cycle)
         _mark_healed(a.code)
+    run_selfheal._prev_active_codes = current_codes
     return 0
 
     log.info("[SELFHEAL] Calling Opus to diagnose %d anomalies: %s",
