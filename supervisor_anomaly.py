@@ -362,11 +362,23 @@ class AnomalyDetector:
 
         anomalies.extend(self._check_lock_files())
 
-        if anomalies:
-            log.warning("[ANOMALY] %d anomalies detected: %s",
-                        len(anomalies), ", ".join(a.code for a in anomalies))
-        else:
-            log.debug("[ANOMALY] All clear.")
+        # Deduplicated anomaly logging: only log on state change
+        current_codes = frozenset(a.code for a in anomalies)
+        if not hasattr(self, "_prev_anomaly_codes"):
+            self._prev_anomaly_codes = frozenset()
+
+        new_codes = current_codes - self._prev_anomaly_codes
+        cleared_codes = self._prev_anomaly_codes - current_codes
+
+        if new_codes:
+            log.warning("[ANOMALY] NEW: %s", ", ".join(sorted(new_codes)))
+        if cleared_codes:
+            log.info("[ANOMALY] CLEARED: %s", ", ".join(sorted(cleared_codes)))
+        if not new_codes and not cleared_codes and anomalies:
+            log.debug("[ANOMALY] Unchanged: %s (suppressed — no state change)",
+                      ", ".join(sorted(current_codes)))
+
+        self._prev_anomaly_codes = current_codes
 
         return AnomalyReport(
             anomalies=anomalies,

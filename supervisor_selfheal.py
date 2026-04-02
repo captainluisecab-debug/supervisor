@@ -445,14 +445,19 @@ def run_selfheal(report: AnomalyReport, portfolio_summary: str,
     # Filter out anomalies on cooldown
     active = [a for a in report.anomalies if not _on_cooldown(a.code)]
     if not active:
-        log.info("[SELFHEAL] All anomalies on cooldown — skipping")
+        # Suppressed: do not log "all on cooldown" every cycle — pure noise
         return 0
 
     # PHASE 1: Opus call DISABLED — detect and log only, no auto-prescribe.
-    # Every selfheal prescription caused harm (parameter thrash, restart loops).
-    # Anomalies are logged for operator review. Re-enable by removing this block.
+    # Deduplicated: only log new anomalies, not repeats of known active ones.
+    if not hasattr(run_selfheal, "_prev_active_codes"):
+        run_selfheal._prev_active_codes = set()
+    current_codes = {a.code for a in active}
+    new_codes = current_codes - run_selfheal._prev_active_codes
     for a in active:
-        log.warning("[SELFHEAL] ANOMALY DETECTED (no auto-action): %s — %s", a.code, a.description[:120])
+        if a.code in new_codes:
+            log.warning("[SELFHEAL] NEW ANOMALY (no auto-action): %s — %s", a.code, a.description[:120])
+    run_selfheal._prev_active_codes = current_codes
         _log_action({"type": "detected", "anomaly": a.code, "description": a.description[:200]},
                      f"DETECTED — no auto-prescribe (Phase 1)", cycle)
         _mark_healed(a.code)
