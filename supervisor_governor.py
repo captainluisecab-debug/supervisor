@@ -139,6 +139,13 @@ def _write_universe_brief(decisions, enzo, sfm, alpaca, regime, brain_note):
             {"sleeve": d.sleeve, "action": d.action, "reason": d.reason[:100]}
             for d in decisions if d.action not in ("HOLD", "HOLD_FLAT")
         ],
+        "feedback": {
+            "equity_1h_ago": _equity_history[0][1] if _equity_history else 0,
+            "equity_now": enzo.get("equity", 0) + sfm.get("equity", 0) + alpaca.get("equity", 0),
+            "equity_direction": "improving" if (_equity_history and
+                (enzo.get("equity", 0) + sfm.get("equity", 0) + alpaca.get("equity", 0)) > _equity_history[0][1])
+                else "declining" if _equity_history else "unknown",
+        },
     }
     try:
         with open(UNIVERSE_BRIEF_FILE, "w", encoding="utf-8") as f:
@@ -640,7 +647,9 @@ def run_governor(cycle: int) -> List[GovernorDecision]:
     brain_advisory = _read_json(os.path.join(BASE_DIR, "supervisor_report.json"))
     _brain_note = brain_advisory.get("brain_note", "")
 
-    # Determine dominant regime from Kraken pair data (most granular source)
+    # AUTHORITATIVE regime: Governor classifies from per-pair data (most granular).
+    # Brain uses macro regime (RISK_ON/OFF) for advisory only — governor overrides.
+    # No duplication conflict: governor decides, brain advises.
     kraken_pair_regime = enzo.get("pair_regime", {})
     dominant_regime = classify_dominant_regime(kraken_pair_regime)
 

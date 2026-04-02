@@ -444,25 +444,7 @@ def run_brain(portfolio, regime, history_tail: list) -> BrainDecision:
             outcome.overall_verdict, outcome.total_chg_pct,
         )
 
-    # PHASE 1: Change-detection gate — skip Claude if nothing material changed
-    _current_regime = regime.regime if regime else None
-    _current_dd_bucket = int(portfolio.total_dd_pct) if hasattr(portfolio, 'total_dd_pct') else 0
-    _now = time.time()
-    _regime_changed = _current_regime != _last_regime_label
-    _dd_crossed = _current_dd_bucket != _last_dd_bucket
-    _backstop = (_now - _last_call_ts) >= _BRAIN_BACKSTOP_SEC
-
-    if _last_brain_decision and not _regime_changed and not _dd_crossed and not _backstop:
-        log.info("[BRAIN] No material change — reusing cached decision (regime=%s dd=%d%%)",
-                 _current_regime, _current_dd_bucket)
-        return _last_brain_decision
-
-    if _regime_changed:
-        log.info("[BRAIN] Regime changed: %s -> %s — calling Claude", _last_regime_label, _current_regime)
-    elif _dd_crossed:
-        log.info("[BRAIN] DD crossed boundary: %d%% -> %d%% — calling Claude", _last_dd_bucket or 0, _current_dd_bucket)
-    elif _backstop:
-        log.info("[BRAIN] 6h backstop — calling Claude")
+    # Brain runs every cycle at $0 — no gating needed (Claude call disabled)
 
     # Fetch all intelligence signals once — passed to prompt builder
     corr_snap      = check_correlation()
@@ -475,14 +457,23 @@ def run_brain(portfolio, regime, history_tail: list) -> BrainDecision:
                            corr_snap=corr_snap, sentiment_snap=sentiment_snap,
                            news_snap=news_snap, calendar_snap=calendar_snap,
                            social_snap=social_snap)
-    log.info("[BRAIN] Calling Claude for unified portfolio decision...")
-
-    raw = _call_claude(prompt)
-    if raw is None:
-        log.warning("[BRAIN] Claude failed — writing safe defaults")
-        _write_defaults("claude call failed")
-        return BrainDecision(SAFE_DEFAULT, SAFE_DEFAULT, SAFE_DEFAULT,
-                             "Claude failed", datetime.now(timezone.utc).isoformat())
+    # BRAIN CLAUDE CALL DISABLED — governor owns all live decisions.
+    # Brain produces deterministic advisory from regime data at $0 cost.
+    # Claude was costing $2-8/day and producing 94.5% NEUTRAL outcomes.
+    _regime_label = regime.regime if regime else "NEUTRAL"
+    _dd = portfolio.total_dd_pct if hasattr(portfolio, 'total_dd_pct') else 0
+    if _regime_label == "RISK_OFF" or _dd < -5:
+        _default_mode = {"mode": "DEFENSE", "size_mult": 0.3, "entry_allowed": False,
+                         "reasoning": f"Brain advisory: {_regime_label}, DD {_dd:.1f}%"}
+    elif _regime_label == "RISK_ON" and _dd > -3:
+        _default_mode = {"mode": "NORMAL", "size_mult": 0.8, "entry_allowed": True,
+                         "reasoning": f"Brain advisory: {_regime_label}, DD {_dd:.1f}%"}
+    else:
+        _default_mode = {"mode": "SCOUT", "size_mult": 0.5, "entry_allowed": False,
+                         "reasoning": f"Brain advisory: {_regime_label}, DD {_dd:.1f}%"}
+    raw = {"kraken": _default_mode, "sfm": dict(_default_mode), "alpaca": dict(_default_mode),
+           "portfolio_note": f"Deterministic advisory: {_regime_label} DD={_dd:.1f}%"}
+    log.info("[BRAIN] Advisory (no Claude call): %s DD=%.1f%%", _regime_label, _dd)
 
     k_cmd = _validate_cmd(raw.get("kraken", SAFE_DEFAULT), "kraken")
     s_cmd = _validate_cmd(raw.get("sfm",    SAFE_DEFAULT), "sfm")

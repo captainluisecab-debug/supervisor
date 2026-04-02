@@ -27,6 +27,7 @@ DECISIONS_LOG  = os.path.join(BASE_DIR, "governor_decisions.jsonl")
 OUTCOMES_LOG   = os.path.join(BASE_DIR, "brain_outcomes.jsonl")
 FIX_LOG        = os.path.join(BASE_DIR, "opus_fix_log.jsonl")
 PNL_SNAPSHOT   = os.path.join(BASE_DIR, "opus_pnl_snapshot.json")
+REVIEW_MEMORY  = os.path.join(BASE_DIR, "opus_review_memory.json")
 REVIEW_WINDOW  = r"C:\Projects\memory\.locks\opus_review_window.active"
 
 # Opus fix authority: can fix minor issues in his own lane
@@ -75,6 +76,27 @@ def read_recent_outcomes(n=10):
         return [json.loads(l.strip()) for l in lines[-n:] if l.strip()]
     except Exception:
         return []
+
+
+def read_review_memory():
+    """Read persistent memory from the last 12h review."""
+    try:
+        if os.path.exists(REVIEW_MEMORY):
+            with open(REVIEW_MEMORY, encoding="utf-8") as f:
+                return json.load(f)
+    except Exception:
+        pass
+    return {"issues_identified": [], "issues_fixed": [], "issues_deferred": [],
+            "issues_active": [], "last_regime": None, "last_pnl": None, "cycle_count": 0}
+
+
+def save_review_memory(memory):
+    """Save persistent memory for the next 12h review."""
+    try:
+        with open(REVIEW_MEMORY, "w", encoding="utf-8") as f:
+            json.dump(memory, f, indent=2)
+    except Exception:
+        pass
 
 
 def read_previous_pnl():
@@ -140,7 +162,7 @@ def _get_recent_commits():
     return "\n".join(commits[-10:]) if commits else "  No recent commits found."
 
 
-def build_prompt(brief, decisions, outcomes, prev_pnl, current_pnl):
+def build_prompt(brief, decisions, outcomes, prev_pnl, current_pnl, review_memory=None):
     now = datetime.now(timezone.utc).isoformat()
 
     # Summarize decisions from last 12h
@@ -204,6 +226,14 @@ RECENT BRAIN OUTCOMES:
 BRAIN ADVISORY (last cycle):
 {brief.get("brain_advisory", "none")}
 
+PERSISTENT REVIEW MEMORY (from your last 12h review — use this to avoid re-raising resolved issues):
+  Review cycle: #{review_memory.get('cycle_count', 0) + 1 if review_memory else 1}
+  Issues previously identified: {json.dumps(review_memory.get('issues_identified', []))}
+  Issues previously fixed: {json.dumps(review_memory.get('issues_fixed', []))}
+  Issues deferred: {json.dumps(review_memory.get('issues_deferred', []))}
+  Issues still active: {json.dumps(review_memory.get('issues_active', []))}
+  Last regime: {review_memory.get('last_regime', '?') if review_memory else '?'}
+
 RECENT CODE CHANGES (last 3 commits per repo — do NOT re-raise issues already fixed):
 {recent_commits}
 
@@ -224,6 +254,12 @@ You have tool access to read and edit Python files across all bot directories.
 You may NOT write to: command files (*_cmd.json), .env, policy.json, brain_state.json, or any runtime state file.
 You may NOT restart services. Fixes take effect on next natural restart.
 
+CLOSURE DISCIPLINE:
+- Do NOT mark any fix as complete unless you have verified it end-to-end.
+- For each fix you apply, verify: the file compiles, the logic is correct, the expected behavior would occur.
+- If you cannot verify a fix, mark it as "applied but unverified" and explain what needs checking.
+- Do NOT re-raise issues from "issues_fixed" in your persistent memory unless you have NEW evidence they are broken again.
+
 If nothing materially changed: report "No material change."
 
 RESPOND IN THIS EXACT MANDATORY FORMAT (all sections required, every 12 hours, 7 days/week):
@@ -242,7 +278,12 @@ RESPOND IN THIS EXACT MANDATORY FORMAT (all sections required, every 12 hours, 7
 (2-3 sentences: current state, direction, main risk)
 
 ## 3. ISSUES FOUND
-(numbered list, or "None")
+For each issue, label its status:
+- ACTIVE: still present and unresolved
+- RESOLVED: fixed in this or a prior cycle
+- BLOCKED: cannot fix without operator approval
+- DEFERRED: known but not priority
+(numbered list with status labels, or "None")
 
 ## 4. FIXES APPLIED (MINOR — in my lane)
 For each fix:
@@ -356,9 +397,10 @@ def main():
     decisions = read_recent_decisions(100)
     outcomes = read_recent_outcomes(10)
     prev_pnl = read_previous_pnl()
-    current_pnl = save_pnl_snapshot(brief)  # save now for next cycle's comparison
+    current_pnl = save_pnl_snapshot(brief)
+    review_memory = read_review_memory()
 
-    prompt = build_prompt(brief, decisions, outcomes, prev_pnl, current_pnl)
+    prompt = build_prompt(brief, decisions, outcomes, prev_pnl, current_pnl, review_memory)
     print(f"[OPUS 12H REVIEW] Prompt built ({len(prompt)} chars). Calling Opus...")
 
     # Open Opus review window — allows writes to bot files during this call only
@@ -392,6 +434,13 @@ def main():
     })
 
     write_report(response, brief)
+
+    # Update persistent memory for next cycle
+    review_memory["cycle_count"] = review_memory.get("cycle_count", 0) + 1
+    review_memory["last_regime"] = brief.get("dominant_regime", "?")
+    review_memory["last_pnl"] = current_pnl.get("universe_equity", 0)
+    save_review_memory(review_memory)
+
     print(f"[OPUS 12H REVIEW] Complete. Report at {REPORT_FILE}")
 
 
