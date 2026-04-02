@@ -26,6 +26,7 @@ REPORT_FILE    = os.path.join(BASE_DIR, "opus_12h_report.md")
 DECISIONS_LOG  = os.path.join(BASE_DIR, "governor_decisions.jsonl")
 OUTCOMES_LOG   = os.path.join(BASE_DIR, "brain_outcomes.jsonl")
 FIX_LOG        = os.path.join(BASE_DIR, "opus_fix_log.jsonl")
+REVIEW_WINDOW  = r"C:\Projects\memory\.locks\opus_review_window.active"
 
 # Opus fix authority: can fix minor issues in his own lane
 # Does NOT touch: governor command files, live runtime, .env, policy.json
@@ -84,6 +85,27 @@ def log_fix(fix_record):
         pass
 
 
+def _get_recent_commits():
+    """Get last 5 git commits across all repos for context."""
+    commits = []
+    for repo, name in [
+        (r"C:\Projects\enzobot", "enzobot"),
+        (r"C:\Projects\sfmbot", "sfmbot"),
+        (r"C:\Projects\alpacabot", "alpacabot"),
+        (r"C:\Projects\supervisor", "supervisor"),
+    ]:
+        try:
+            result = subprocess.run(
+                ["git", "log", "--oneline", "-3"],
+                capture_output=True, text=True, timeout=10, cwd=repo,
+            )
+            for line in result.stdout.strip().splitlines()[:3]:
+                commits.append(f"  [{name}] {line.strip()}")
+        except Exception:
+            pass
+    return "\n".join(commits[-10:]) if commits else "  No recent commits found."
+
+
 def build_prompt(brief, decisions, outcomes):
     now = datetime.now(timezone.utc).isoformat()
 
@@ -93,6 +115,8 @@ def build_prompt(brief, decisions, outcomes):
     for d in decisions:
         a = d.get("action", "?")
         action_counts[a] = action_counts.get(a, 0) + 1
+
+    recent_commits = _get_recent_commits()
 
     return f"""You are Opus, the strategic reviewer for an autonomous multi-bot trading system.
 This is your scheduled 12-hour review. You receive this exactly twice daily at 9:00 AM and 9:00 PM.
@@ -122,6 +146,13 @@ RECENT BRAIN OUTCOMES:
 
 BRAIN ADVISORY (last cycle):
 {brief.get("brain_advisory", "none")}
+
+RECENT CODE CHANGES (last 3 commits per repo — do NOT re-raise issues that were already fixed):
+{recent_commits}
+
+IMPORTANT: Before flagging any issue, check whether a recent commit already addresses it.
+If a fix was already deployed, report it as RESOLVED, not as a current issue.
+Only flag issues that are STILL PRESENT in the current running code.
 
 YOUR TASK:
 1. Review the last 12 hours of governor and system behavior.
@@ -240,7 +271,25 @@ def main():
     prompt = build_prompt(brief, decisions, outcomes)
     print(f"[OPUS 12H REVIEW] Prompt built ({len(prompt)} chars). Calling Opus...")
 
-    response = call_opus(prompt)
+    # Open Opus review window — allows writes to bot files during this call only
+    try:
+        os.makedirs(os.path.dirname(REVIEW_WINDOW), exist_ok=True)
+        with open(REVIEW_WINDOW, "w") as f:
+            f.write(f"opus_12h_review active since {ts}")
+        print(f"[OPUS 12H REVIEW] Review window opened")
+    except Exception as exc:
+        print(f"[OPUS 12H REVIEW] WARNING: could not open review window: {exc}")
+
+    try:
+        response = call_opus(prompt)
+    finally:
+        # Always close the review window, even on error
+        try:
+            if os.path.exists(REVIEW_WINDOW):
+                os.remove(REVIEW_WINDOW)
+                print(f"[OPUS 12H REVIEW] Review window closed")
+        except Exception:
+            pass
     print(f"[OPUS 12H REVIEW] Response received ({len(response)} chars)")
 
     # Log the review event
