@@ -91,8 +91,8 @@ DEFAULT_BEHAVIOR = REGIME_BEHAVIOR["RANGING"]  # conservative default
 CMD_KRAKEN  = os.path.join(BASE_DIR, "commands", "kraken_cmd.json")
 CMD_SFM     = os.path.join(BASE_DIR, "commands", "sfm_cmd.json")
 CMD_ALPACA  = os.path.join(BASE_DIR, "commands", "alpaca_cmd.json")
-# CMD_ENZO removed — governor was writing in wrong format, enzobot brain ignored it.
-# Engine reads force_flatten from kraken_cmd.json (CMD_KRAKEN). That path works.
+# Kraken single source of truth — governor consolidates all inputs every cycle
+KRAKEN_TRUTH_FILE = os.path.join(BASE_DIR, "kraken_state_truth.json")
 
 # ── State ─────────────────────────────────────────────────────────────
 _equity_history: List[tuple] = []  # [(ts, equity), ...]
@@ -158,6 +158,55 @@ def _write_universe_brief(decisions, enzo, sfm, alpaca, regime, brain_note):
         log.error("[GOVERNOR] Failed to write universe brief: %s", exc)
 
 
+# ── Kraken state truth ────────────────────────────────────────────────
+
+def _write_kraken_truth(enzo_state: dict, decisions: list, dominant_regime: str):
+    """Write the single authoritative Kraken state file every cycle.
+    Consolidates: portfolio, brain mode, positions, regime, governor command.
+    Any component that needs to know Kraken's full state reads this file."""
+    kraken_decisions = [d for d in decisions if d.sleeve == "kraken"]
+    effective_action = "HOLD"
+    for d in kraken_decisions:
+        if d.action not in ("HOLD", "HOLD_FLAT"):
+            effective_action = d.action
+
+    # Read current command file for completeness
+    cmd = _read_json(CMD_KRAKEN)
+
+    truth = {
+        "ts": datetime.now(timezone.utc).isoformat(),
+        "source": "governor",
+        "effective_posture": effective_action,
+        "force_flatten": cmd.get("force_flatten", False),
+        "portfolio": {
+            "equity": enzo_state.get("equity", 0),
+            "cash": enzo_state.get("cash", 0),
+            "dd_pct": enzo_state.get("dd_pct", 0),
+            "open_positions": enzo_state.get("open_positions", 0),
+        },
+        "brain_mode": enzo_state.get("mode", "?"),
+        "regime": {
+            "dominant": dominant_regime,
+            "pair_regime": enzo_state.get("pair_regime", {}),
+        },
+        "governor_decisions": [
+            {"action": d.action, "reason": d.reason[:80]} for d in kraken_decisions
+        ],
+        "command": {
+            "mode": cmd.get("mode", "?"),
+            "size_mult": cmd.get("size_mult", 0),
+            "entry_allowed": cmd.get("entry_allowed", False),
+        },
+    }
+    try:
+        tmp = KRAKEN_TRUTH_FILE + ".tmp"
+        with open(tmp, "w", encoding="utf-8") as f:
+            json.dump(truth, f, indent=2)
+        os.replace(tmp, KRAKEN_TRUTH_FILE)
+    except Exception as exc:
+        log.error("[GOVERNOR] Failed to write Kraken truth: %s", exc)
+
+
 # ── Feedback loop ─────────────────────────────────────────────────────
 
 _last_posture_snapshot: Optional[dict] = None
@@ -220,6 +269,61 @@ def _score_posture_outcome(current_equity: float, current_posture: str) -> Optio
     }
 
     return outcome
+
+
+# Adaptive regime threshold bounds (governor may adjust within these)
+_REGIME_THRESH_MIN = 1800   # 30 min floor
+_REGIME_THRESH_MAX = 14400  # 4 hour ceiling
+_REGIME_THRESH_STEP = 900   # 15 min adjustment per feedback cycle
+
+
+def _adjust_regime_threshold():
+    """Adjust the Kraken regime duration threshold based on posture outcomes.
+    If recent TRADE outcomes were WRONG, tighten (require longer regime stability).
+    If recent TRADE outcomes were CORRECT, loosen (allow shorter regime stability).
+    Bounded between 30 min and 4 hours."""
+    try:
+        if not os.path.exists(POSTURE_OUTCOMES_FILE):
+            return
+        with open(POSTURE_OUTCOMES_FILE, encoding="utf-8") as f:
+            outcomes = [json.loads(l.strip()) for l in f.readlines()[-10:] if l.strip()]
+        trade_outcomes = [o for o in outcomes if o.get("posture") in ("TRADE_ACTIVE", "TRADE")]
+        if len(trade_outcomes) < 3:
+            return  # not enough data to adjust
+
+        recent_5 = trade_outcomes[-5:]
+        wrong_count = sum(1 for o in recent_5 if o.get("verdict") == "WRONG")
+        correct_count = sum(1 for o in recent_5 if o.get("verdict") == "CORRECT")
+
+        # Read current threshold from enzobot engine config
+        # We can't write to .env directly, but we can write an advisory that the
+        # 12h Opus review or operator can act on
+        # Read current threshold
+        current_cmd = _read_json(CMD_KRAKEN)
+        current_thresh = current_cmd.get("regime_min_stable_sec", 3600)
+
+        new_thresh = current_thresh
+        if wrong_count >= 3 and current_thresh < _REGIME_THRESH_MAX:
+            new_thresh = min(current_thresh + _REGIME_THRESH_STEP, _REGIME_THRESH_MAX)
+            log.info("[FEEDBACK] %d/5 TRADE outcomes WRONG — regime threshold %ds -> %ds",
+                     wrong_count, current_thresh, new_thresh)
+        elif correct_count >= 3 and current_thresh > _REGIME_THRESH_MIN:
+            new_thresh = max(current_thresh - _REGIME_THRESH_STEP, _REGIME_THRESH_MIN)
+            log.info("[FEEDBACK] %d/5 TRADE outcomes CORRECT — regime threshold %ds -> %ds",
+                     correct_count, current_thresh, new_thresh)
+
+        if new_thresh != current_thresh:
+            # Write updated threshold to command file — engine reads it next cycle
+            current_cmd["regime_min_stable_sec"] = new_thresh
+            try:
+                tmp = CMD_KRAKEN + ".tmp"
+                with open(tmp, "w", encoding="utf-8") as f:
+                    json.dump(current_cmd, f, indent=2)
+                os.replace(tmp, CMD_KRAKEN)
+            except Exception:
+                pass
+    except Exception as exc:
+        log.debug("[FEEDBACK] Threshold adjustment error: %s", exc)
 
 
 # ── Data readers ──────────────────────────────────────────────────────
@@ -755,6 +859,12 @@ def run_governor(cycle: int) -> List[GovernorDecision]:
 
     # Write universe brief for Opus 12h review
     _write_universe_brief(all_decisions, enzo, sfm, alpaca, dominant_regime, _brain_note)
+
+    # Write Kraken single source of truth
+    _write_kraken_truth(enzo, all_decisions, dominant_regime)
+
+    # Adaptive feedback: adjust Kraken regime duration based on posture outcomes
+    _adjust_regime_threshold()
 
     _last_governor_ts = time.time()
     return all_decisions

@@ -1,0 +1,10 @@
+{
+  "ts": "2026-04-02T00:00:00Z",
+  "source": "governor",
+  "note": "Single source of truth for Kraken state. Written by governor every cycle. All other files are component-owned inputs.",
+  "command": {},
+  "portfolio": {},
+  "brain": {},
+  "positions": {},
+  "regime": {}
+}
