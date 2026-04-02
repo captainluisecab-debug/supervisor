@@ -26,6 +26,7 @@ REPORT_FILE    = os.path.join(BASE_DIR, "opus_12h_report.md")
 DECISIONS_LOG  = os.path.join(BASE_DIR, "governor_decisions.jsonl")
 OUTCOMES_LOG   = os.path.join(BASE_DIR, "brain_outcomes.jsonl")
 FIX_LOG        = os.path.join(BASE_DIR, "opus_fix_log.jsonl")
+PNL_SNAPSHOT   = os.path.join(BASE_DIR, "opus_pnl_snapshot.json")
 REVIEW_WINDOW  = r"C:\Projects\memory\.locks\opus_review_window.active"
 
 # Opus fix authority: can fix minor issues in his own lane
@@ -76,6 +77,39 @@ def read_recent_outcomes(n=10):
         return []
 
 
+def read_previous_pnl():
+    """Read the PnL snapshot from the last 12h review."""
+    try:
+        if os.path.exists(PNL_SNAPSHOT):
+            with open(PNL_SNAPSHOT, encoding="utf-8") as f:
+                return json.load(f)
+    except Exception:
+        pass
+    return None
+
+
+def save_pnl_snapshot(brief):
+    """Save current PnL for comparison in the next 12h review."""
+    snapshot = {
+        "ts": datetime.now(timezone.utc).isoformat(),
+        "universe_equity": (
+            brief.get("kraken", {}).get("equity", 0) +
+            brief.get("sfm", {}).get("equity", 0) +
+            brief.get("alpaca", {}).get("equity", 0)
+        ),
+        "kraken_equity": brief.get("kraken", {}).get("equity", 0),
+        "sfm_equity": brief.get("sfm", {}).get("equity", 0),
+        "alpaca_equity": brief.get("alpaca", {}).get("equity", 0),
+        "kraken_dd": brief.get("kraken", {}).get("dd_pct", 0),
+    }
+    try:
+        with open(PNL_SNAPSHOT, "w", encoding="utf-8") as f:
+            json.dump(snapshot, f, indent=2)
+    except Exception:
+        pass
+    return snapshot
+
+
 def log_fix(fix_record):
     """Log every Opus fix action for audit."""
     try:
@@ -106,17 +140,31 @@ def _get_recent_commits():
     return "\n".join(commits[-10:]) if commits else "  No recent commits found."
 
 
-def build_prompt(brief, decisions, outcomes):
+def build_prompt(brief, decisions, outcomes, prev_pnl, current_pnl):
     now = datetime.now(timezone.utc).isoformat()
 
     # Summarize decisions from last 12h
-    twelve_h_ago = time.time() - 43200
     action_counts = {}
     for d in decisions:
         a = d.get("action", "?")
         action_counts[a] = action_counts.get(a, 0) + 1
 
     recent_commits = _get_recent_commits()
+
+    # PnL delta computation
+    if prev_pnl:
+        universe_delta = current_pnl["universe_equity"] - prev_pnl.get("universe_equity", current_pnl["universe_equity"])
+        kraken_delta = current_pnl["kraken_equity"] - prev_pnl.get("kraken_equity", current_pnl["kraken_equity"])
+        sfm_delta = current_pnl["sfm_equity"] - prev_pnl.get("sfm_equity", current_pnl["sfm_equity"])
+        alpaca_delta = current_pnl["alpaca_equity"] - prev_pnl.get("alpaca_equity", current_pnl["alpaca_equity"])
+        pnl_context = f"""PNL DELTA (vs 12 hours ago):
+  Universe: ${universe_delta:+.2f} ({'better' if universe_delta > 0 else 'worse' if universe_delta < 0 else 'flat'})
+  Kraken:   ${kraken_delta:+.2f}
+  SFM:      ${sfm_delta:+.2f}
+  Alpaca:   ${alpaca_delta:+.2f}
+  Previous snapshot: {prev_pnl.get('ts', '?')}"""
+    else:
+        pnl_context = "PNL DELTA: No previous snapshot. This is the first review with PnL tracking."
 
     return f"""You are Opus, the strategic reviewer for an autonomous multi-bot trading system.
 This is your scheduled 12-hour review. You receive this exactly twice daily at 9:00 AM and 9:00 PM.
@@ -138,6 +186,15 @@ YOUR FORBIDDEN SCOPE:
 CURRENT UNIVERSE STATE:
 {json.dumps(brief, indent=2)}
 
+{pnl_context}
+
+CURRENT PNL:
+  Universe equity: ${current_pnl['universe_equity']:.2f}
+  Universe PnL vs baseline ($6,969.62): ${current_pnl['universe_equity'] - 6969.62:+.2f}
+  Kraken: ${current_pnl['kraken_equity']:.2f} (DD {current_pnl.get('kraken_dd', 0):.1f}%)
+  SFM: ${current_pnl['sfm_equity']:.2f}
+  Alpaca: ${current_pnl['alpaca_equity']:.2f}
+
 GOVERNOR DECISION SUMMARY (last 12h):
 {json.dumps(action_counts, indent=2)}
 
@@ -147,7 +204,7 @@ RECENT BRAIN OUTCOMES:
 BRAIN ADVISORY (last cycle):
 {brief.get("brain_advisory", "none")}
 
-RECENT CODE CHANGES (last 3 commits per repo — do NOT re-raise issues that were already fixed):
+RECENT CODE CHANGES (last 3 commits per repo — do NOT re-raise issues already fixed):
 {recent_commits}
 
 IMPORTANT: Before flagging any issue, check whether a recent commit already addresses it.
@@ -156,7 +213,7 @@ Only flag issues that are STILL PRESENT in the current running code.
 
 YOUR TASK:
 1. Review the last 12 hours of governor and system behavior.
-2. Identify any loopholes, bugs, communication issues, or missed opportunities that are blocking positive trend.
+2. Identify any loopholes, bugs, communication issues, or missed opportunities blocking positive trend.
 3. For each issue, classify as:
    - MINOR: FIX IT NOW using your file tools (Read/Edit/Write). You have execution authority on minor fixes. Then report what you fixed.
    - MAJOR: requires operator approval — describe the fix but do NOT execute it.
@@ -167,26 +224,57 @@ You have tool access to read and edit Python files across all bot directories.
 You may NOT write to: command files (*_cmd.json), .env, policy.json, brain_state.json, or any runtime state file.
 You may NOT restart services. Fixes take effect on next natural restart.
 
-If nothing materially changed: report "No material change. System operating as designed."
+If nothing materially changed: report "No material change."
 
-RESPOND IN THIS EXACT FORMAT:
+RESPOND IN THIS EXACT MANDATORY FORMAT (all sections required, every 12 hours, 7 days/week):
 
-## UNIVERSE STATUS
+## 1. PNL REPORT
+| Metric | Value |
+|--------|-------|
+| Universe equity now | $X |
+| Universe PnL (vs $6,969.62 baseline) | $X |
+| Delta vs 12 hours ago | $X (better/flat/worse) |
+| Kraken delta | $X |
+| SFM delta | $X |
+| Alpaca delta | $X |
+
+## 2. UNIVERSE STATUS
 (2-3 sentences: current state, direction, main risk)
 
-## ISSUES FOUND
+## 3. ISSUES FOUND
 (numbered list, or "None")
 
-## FIXES APPLIED (MINOR — in my lane)
-(numbered list with: what was wrong, what I fixed, expected benefit, rollback path — or "None")
+## 4. FIXES APPLIED (MINOR — in my lane)
+For each fix:
+- what was wrong
+- exact file(s) changed
+- what I fixed
+- expected benefit
+- rollback path
+Or: "None"
 
-## FIXES RECOMMENDED (MAJOR — needs operator approval)
-(numbered list with: what is wrong, what should change, expected benefit, risk — or "None")
+## 5. FIXES RECOMMENDED (MAJOR — needs operator approval)
+For each:
+- what is wrong
+- what should change
+- expected benefit
+- risk
+Or: "None"
 
-## OPERATOR ACTION NEEDED
+## 6. POSITIVE TREND BLOCKER
+- What prevented sleeves from improving positive trend in the last 12h?
+- Which sleeve was most blocked?
+- Blocker type: market / strategy / governor / command / bug / capital-limit
+- Single biggest blocker:
+- Blocker status: already fixed / still active / needs approval
+
+## 7. OPERATOR ACTION NEEDED
 (yes/no + specific action items if yes)
 
-## NEXT 12H OUTLOOK
+## 8. OPERATOR BOTTOM LINE
+One line: better / flat / worse vs last 12h, and why.
+
+## 9. NEXT 12H OUTLOOK
 (1-2 sentences: what to expect, what to watch)
 """
 
@@ -267,8 +355,10 @@ def main():
 
     decisions = read_recent_decisions(100)
     outcomes = read_recent_outcomes(10)
+    prev_pnl = read_previous_pnl()
+    current_pnl = save_pnl_snapshot(brief)  # save now for next cycle's comparison
 
-    prompt = build_prompt(brief, decisions, outcomes)
+    prompt = build_prompt(brief, decisions, outcomes, prev_pnl, current_pnl)
     print(f"[OPUS 12H REVIEW] Prompt built ({len(prompt)} chars). Calling Opus...")
 
     # Open Opus review window — allows writes to bot files during this call only
