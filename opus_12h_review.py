@@ -251,6 +251,10 @@ YOUR TASK:
 5. After making any fixes, produce a clear operator status report.
 
 You have tool access to read and edit Python files across all bot directories.
+PERMISSIONS: The opus_review_window is OPEN right now. You HAVE write permission to edit Python files.
+DO NOT assume permissions are denied. DO NOT skip fixes because of prior permission errors.
+If a fix is in your lane, EXECUTE IT NOW using Edit or Write tools. Do not just report it.
+
 You may NOT write to: command files (*_cmd.json), .env, policy.json, brain_state.json, or any runtime state file.
 You may NOT restart services. Fixes take effect on next natural restart.
 
