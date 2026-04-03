@@ -166,8 +166,10 @@ def _write_kraken_truth(enzo_state: dict, decisions: list, dominant_regime: str)
     Any component that needs to know Kraken's full state reads this file."""
     kraken_decisions = [d for d in decisions if d.sleeve == "kraken"]
     effective_action = "HOLD"
+    # ALERT is informational (no command-file change), skip it for posture
+    _INFORMATIONAL_ACTIONS = {"ALERT", "EXTEND_COOLDOWN"}
     for d in kraken_decisions:
-        if d.action not in ("HOLD", "HOLD_FLAT"):
+        if d.action not in ("HOLD", "HOLD_FLAT") and d.action not in _INFORMATIONAL_ACTIONS:
             effective_action = d.action
 
     # Read current command file for completeness
@@ -644,6 +646,19 @@ def evaluate_kraken(enzo_state: dict, exits: List[dict], cycle: int) -> List[Gov
                             f"Governor: negative expectancy override", "kraken",
                             force_flatten=_exp_flatten)
 
+    # Hermes DD advisory override (tighten-only): if Hermes says no entries, block entries
+    _hermes_entry = _hermes_advisory.get("kraken", {}).get("entry_allowed", True)
+    if not _hermes_entry and dd < -5:
+        decisions.append(GovernorDecision(
+            ts=now_iso, cycle=cycle, action="HERMES_DD_OVERRIDE", sleeve="kraken",
+            reason=f"Hermes advisory: entry_allowed=false (DD={dd:.1f}%) — tighten-only override",
+            shadow=SHADOW_MODE, metrics=metrics,
+        ))
+        _write_command_file(CMD_KRAKEN, "DEFENSE", 0.0, False,
+                            f"Governor: Hermes DD override (DD={dd:.1f}%)", "kraken",
+                            force_flatten=(regime_mode == "FLAT"))
+        log.info("[GOVERNOR] Hermes DD override: entry_allowed=false (DD=%.1f%%)", dd)
+
     if dd_rate < -DD_ACCEL_THRESHOLD_PER_HOUR:
         decisions.append(GovernorDecision(
             ts=now_iso, cycle=cycle, action="FORCE_DEFENSE", sleeve="kraken",
@@ -815,9 +830,10 @@ def run_governor(cycle: int) -> List[GovernorDecision]:
     sfm = _read_sfm_state()
     alpaca = _read_alpaca_state()
 
-    # Read brain advisory (input only — governor decides, brain advises)
-    brain_advisory = _read_json(os.path.join(BASE_DIR, "supervisor_report.json"))
-    _brain_note = brain_advisory.get("brain_note", "")
+    # Read Hermes context (advisory input — governor decides, Hermes advises)
+    _hermes_ctx = _read_json(os.path.join(BASE_DIR, "hermes_context.json"))
+    _hermes_advisory = _hermes_ctx.get("advisory", {})
+    _brain_note = _hermes_advisory.get("note", "")
 
     # AUTHORITATIVE regime: Governor classifies from per-pair data (most granular).
     # Brain uses macro regime (RISK_ON/OFF) for advisory only — governor overrides.
