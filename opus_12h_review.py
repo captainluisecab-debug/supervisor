@@ -346,7 +346,7 @@ def call_opus(prompt):
     command files or live runtime state files."""
     try:
         result = subprocess.run(
-            ["claude", "-p", "--model", "opus"],
+            ["claude", "-p", "--model", "opus", "--permission-mode", "acceptEdits"],
             input=prompt,
             capture_output=True,
             text=True,
