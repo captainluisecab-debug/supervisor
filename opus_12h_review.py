@@ -22,6 +22,7 @@ from datetime import datetime, timezone
 
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 BRIEF_FILE     = os.path.join(BASE_DIR, "governor_universe_brief.json")
+HERMES_FILE    = os.path.join(BASE_DIR, "hermes_context.json")
 REPORT_FILE    = os.path.join(BASE_DIR, "opus_12h_report.md")
 DECISIONS_LOG  = os.path.join(BASE_DIR, "governor_decisions.jsonl")
 OUTCOMES_LOG   = os.path.join(BASE_DIR, "brain_outcomes.jsonl")
@@ -50,6 +51,17 @@ OPUS_FIX_SCOPE = {
         "entry/exit rule changes",
     ],
 }
+
+
+def _read_hermes_context():
+    """Read Hermes consolidated context — primary data source for Opus."""
+    try:
+        if os.path.exists(HERMES_FILE):
+            with open(HERMES_FILE, encoding="utf-8") as f:
+                return json.load(f)
+    except Exception:
+        pass
+    return {"note": "Hermes context not available — using governor brief as fallback"}
 
 
 def read_brief():
@@ -205,7 +217,10 @@ YOUR ALLOWED FIX SCOPE:
 YOUR FORBIDDEN SCOPE:
 {json.dumps(OPUS_FIX_SCOPE["forbidden"], indent=2)}
 
-CURRENT UNIVERSE STATE:
+HERMES CONSOLIDATED CONTEXT (single source of truth — replaces scattered file reads):
+{json.dumps(_read_hermes_context(), indent=2)}
+
+GOVERNOR UNIVERSE BRIEF:
 {json.dumps(brief, indent=2)}
 
 {pnl_context}

@@ -47,7 +47,6 @@ from supervisor_settings import (
 from supervisor_portfolio import build_portfolio
 from supervisor_regime import classify_regime
 from supervisor_report import build_report, save_report
-from supervisor_brain import run_brain
 from supervisor_allocation import compute_allocations
 from supervisor_memory import load_recent_outcomes
 from supervisor_morning_brief import should_fire, fire_morning_brief
@@ -56,8 +55,8 @@ from supervisor_correlation import check_correlation
 from supervisor_calendar import get_calendar
 from supervisor_anomaly import AnomalyDetector
 from supervisor_selfheal import run_selfheal
-# from supervisor_escalation import check_escalations  # DISABLED — wasting API, actions suppressed
 from supervisor_governor import run_governor
+from hermes_context import build_context, compute_advisory
 
 
 def _dynamic_brain_interval(regime, portfolio) -> int:
@@ -159,24 +158,19 @@ def _run_cycle(cycle: int, peak_equity: float, anomaly_detector: AnomalyDetector
                            sentiment=sentiment, correlation=correlation,
                            news=news, calendar=calendar, social=social)
 
-    # 4. Claude unified brain — dynamic interval based on market conditions
-    brain_interval = _dynamic_brain_interval(regime, portfolio)
-    if brain_interval != BRAIN_INTERVAL_CYCLES:
-        log.info("Dynamic brain interval: every %d cycles (~%dm) [stress mode]",
-                 brain_interval, brain_interval * CYCLE_SEC // 60)
+    # 4. Hermes context layer — runs every cycle, $0, replaces Brain
+    _regime_label = regime.regime if regime else "NEUTRAL"
+    _regime_conf = regime.confidence if regime else 0
+    _dd = portfolio.total_dd_pct if hasattr(portfolio, 'total_dd_pct') else 0
+    hermes_ctx = build_context(_regime_label, _regime_conf)
+    advisory = compute_advisory(_regime_label, _dd)
+    log.info("[HERMES] %s | universe=$%.2f | %s",
+             _regime_label, hermes_ctx.get("universe", {}).get("equity", 0),
+             advisory.get("note", ""))
 
-    if cycle % brain_interval == 1:
-        history = _load_history_tail(3)
-        decision = run_brain(portfolio, regime, history)
-        log.info(
-            "[BRAIN] Decision: kraken=%s %.1fx | sfm=%s %.1fx | alpaca=%s %.1fx",
-            decision.kraken.get("mode"), decision.kraken.get("size_mult"),
-            decision.sfm.get("mode"),    decision.sfm.get("size_mult"),
-            decision.alpaca.get("mode"), decision.alpaca.get("size_mult"),
-        )
-        log.info("[BRAIN] %s", decision.portfolio_note)
-    else:
-        next_brain = brain_interval - (cycle % brain_interval)
+    # Legacy compatibility: brain_interval logging removed (Brain replaced by Hermes)
+    if False:  # Dead code marker — remove after verification
+        next_brain = 0
         log.info("Brain update in %d cycles (~%dm) [interval=%d]",
                  next_brain, next_brain * CYCLE_SEC // 60, brain_interval)
 
