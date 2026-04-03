@@ -1,5 +1,9 @@
 """
-supervisor_governor.py — Local deterministic governor for the bot universe.
+supervisor_governor.py — GOVERNOR: Live Execution Authority.
+
+ROLE: Only live writer of command files. Drives posture, enforces regime,
+protects capital. No other component may write commands or override.
+GOAL: Increase positive PnL. Protect capital. Reduce stupid losses.
 
 Runs every supervisor cycle. Reads bot states, computes 6 core metrics,
 takes automatic tightening actions (or logs shadow decisions), and triggers

@@ -1,5 +1,10 @@
 """
-hermes_context.py — Pure Python continuity/memory layer. $0 cost.
+hermes_context.py — HERMES: Context Authority.
+
+ROLE: Remember, organize, track history, detect drift, preserve continuity.
+Does NOT write commands. Does NOT take live control. Feeds context to
+Governor and Opus.
+GOAL: Increase positive PnL. Protect capital. Reduce stupid losses.
 
 Runs every supervisor cycle. Reads all state files across the universe,
 maintains rolling context, and writes one consolidated hermes_context.json
