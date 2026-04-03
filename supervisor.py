@@ -163,16 +163,12 @@ def _run_cycle(cycle: int, peak_equity: float, anomaly_detector: AnomalyDetector
     _regime_conf = regime.confidence if regime else 0
     _dd = portfolio.total_dd_pct if hasattr(portfolio, 'total_dd_pct') else 0
     hermes_ctx = build_context(_regime_label, _regime_conf)
-    advisory = compute_advisory(_regime_label, _dd)
+    advisory = compute_advisory(_regime_label, _dd)  # supervisor uses portfolio DD for log line
     log.info("[HERMES] %s | universe=$%.2f | %s",
              _regime_label, hermes_ctx.get("universe", {}).get("equity", 0),
              advisory.get("note", ""))
 
-    # Legacy compatibility: brain_interval logging removed (Brain replaced by Hermes)
-    if False:  # Dead code marker — remove after verification
-        next_brain = 0
-        log.info("Brain update in %d cycles (~%dm) [interval=%d]",
-                 next_brain, next_brain * CYCLE_SEC // 60, brain_interval)
+    # Brain replaced by Hermes context layer (cf062bc)
 
     # 5. Escalation bus — DISABLED (actions suppressed, wasting API credits)
     # Escalation responses are handled by the 12h Opus review cycle instead.

@@ -416,24 +416,32 @@ def _read_recent_exits(sleeve: str) -> List[dict]:
 # ── Regime classification ─────────────────────────────────────────────
 
 def classify_dominant_regime(pair_regime: dict) -> str:
-    """Determine the dominant regime from per-pair classifications."""
+    """Determine the dominant regime from per-pair classifications.
+    Weighted by asset tier: BTC/ETH=2x, SOL/XRP=1.5x, others=1x.
+    Prevents small-cap alts from outvoting large-cap direction."""
     if not pair_regime:
         return "RANGING"
+    TIER_WEIGHTS = {
+        "BTC/USD": 2.0, "ETH/USD": 2.0,
+        "SOL/USD": 1.5, "XRP/USD": 1.5,
+    }
     counts = {}
-    for regime in pair_regime.values():
+    total = 0.0
+    for pair, regime in pair_regime.items():
         r = regime.upper() if isinstance(regime, str) else "RANGING"
-        # Normalize: "UP" -> "TRENDING_UP", "DOWN" -> "TRENDING_DOWN"
         if r == "UP":
             r = "TRENDING_UP"
         elif r == "DOWN":
             r = "TRENDING_DOWN"
-        counts[r] = counts.get(r, 0) + 1
-    total = sum(counts.values())
-    # Majority rule: if 60%+ of pairs are in one regime, that's dominant
+        weight = TIER_WEIGHTS.get(pair, 1.0)
+        counts[r] = counts.get(r, 0) + weight
+        total += weight
+    if total <= 0:
+        return "RANGING"
+    # Weighted majority: if 55%+ of weighted votes are in one regime
     for regime, count in sorted(counts.items(), key=lambda x: -x[1]):
-        if count / total >= 0.6:
+        if count / total >= 0.55:
             return regime
-    # No clear majority -> RANGING (the conservative default)
     return "RANGING"
 
 
@@ -676,10 +684,14 @@ def evaluate_kraken(enzo_state: dict, exits: List[dict], cycle: int,
 
     if hours_since_win > NO_WIN_ALERT_HOURS and exits:
         decisions.append(GovernorDecision(
-            ts=now_iso, cycle=cycle, action="ALERT", sleeve="kraken",
-            reason=f"No profitable exit in {hours_since_win:.0f} hours",
+            ts=now_iso, cycle=cycle, action="ALERT_FREEZE", sleeve="kraken",
+            reason=f"No profitable exit in {hours_since_win:.0f} hours — entries blocked",
             shadow=SHADOW_MODE, metrics=metrics,
         ))
+        # Tighten-only: block entries when the bot can't produce wins
+        _write_command_file(CMD_KRAKEN, "DEFENSE", 0.0, False,
+                            f"Governor: no win in {hours_since_win:.0f}h — entries frozen", "kraken",
+                            force_flatten=(regime_mode == "FLAT"))
 
     return decisions
 

@@ -120,28 +120,27 @@ def _read_alpaca() -> dict:
 
 # ── Brain replacement: deterministic advisory ─────────────────────────
 
-def compute_advisory(regime_label: str, dd_pct: float) -> dict:
-    """Replace the Brain's Claude call with a $0 deterministic advisory.
-    Returns a posture recommendation per sleeve."""
+def _sleeve_advisory(regime_label: str, dd_pct: float, sleeve: str) -> dict:
+    """Compute advisory for a single sleeve based on its own DD."""
     if regime_label == "RISK_OFF" or dd_pct < -5:
-        mode = "DEFENSE"
-        size = 0.3
-        entry = False
+        mode, size, entry = "DEFENSE", 0.3, False
     elif regime_label == "RISK_ON" and dd_pct > -3:
-        mode = "NORMAL"
-        size = 0.8
-        entry = True
+        mode, size, entry = "NORMAL", 0.8, True
     else:
-        mode = "SCOUT"
-        size = 0.5
-        entry = False
+        mode, size, entry = "SCOUT", 0.5, False
+    return {"mode": mode, "size_mult": size, "entry_allowed": entry,
+            "reasoning": f"Hermes advisory: {regime_label}, {sleeve} DD {dd_pct:.1f}%"}
 
-    reasoning = f"Hermes advisory: {regime_label}, DD {dd_pct:.1f}%"
+
+def compute_advisory(regime_label: str, kraken_dd: float,
+                     sfm_dd: float = 0.0, alpaca_dd: float = 0.0) -> dict:
+    """Per-sleeve deterministic advisory. Each sleeve uses its own DD."""
+    k = _sleeve_advisory(regime_label, kraken_dd, "kraken")
+    s = _sleeve_advisory(regime_label, sfm_dd, "sfm")
+    a = _sleeve_advisory(regime_label, alpaca_dd, "alpaca")
     return {
-        "kraken": {"mode": mode, "size_mult": size, "entry_allowed": entry, "reasoning": reasoning},
-        "sfm": {"mode": mode, "size_mult": size, "entry_allowed": entry, "reasoning": reasoning},
-        "alpaca": {"mode": mode, "size_mult": size, "entry_allowed": entry, "reasoning": reasoning},
-        "note": reasoning,
+        "kraken": k, "sfm": s, "alpaca": a,
+        "note": f"Hermes advisory: {regime_label}, K={kraken_dd:.1f}% S={sfm_dd:.1f}% A={alpaca_dd:.1f}%",
     }
 
 
@@ -235,7 +234,12 @@ def build_context(regime_label: str, regime_confidence: float) -> dict:
     opus_memory = _read_json(os.path.join(BASE_DIR, "opus_review_memory.json"))
 
     # Build advisory (replaces Brain)
-    advisory = compute_advisory(regime_label, kraken.get("dd_pct", 0))
+    advisory = compute_advisory(
+        regime_label,
+        kraken_dd=kraken.get("dd_pct", 0),
+        sfm_dd=sfm.get("dd_pct", 0),
+        alpaca_dd=(alpaca.get("equity", 500) - 500) / 500 * 100 if alpaca.get("equity", 500) < 500 else 0,
+    )
 
     context = {
         "ts": now_iso,
