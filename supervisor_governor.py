@@ -555,7 +555,8 @@ def _log_decision(decision: GovernorDecision) -> None:
         log.error("[GOVERNOR] Failed to log decision: %s", exc)
 
 
-def evaluate_kraken(enzo_state: dict, exits: List[dict], cycle: int) -> List[GovernorDecision]:
+def evaluate_kraken(enzo_state: dict, exits: List[dict], cycle: int,
+                    hermes_advisory: dict = None) -> List[GovernorDecision]:
     """Evaluate Kraken sleeve using regime behavior matrix + metrics."""
     decisions = []
     now_iso = datetime.now(timezone.utc).isoformat()
@@ -647,7 +648,7 @@ def evaluate_kraken(enzo_state: dict, exits: List[dict], cycle: int) -> List[Gov
                             force_flatten=_exp_flatten)
 
     # Hermes DD advisory override (tighten-only): if Hermes says no entries, block entries
-    _hermes_entry = _hermes_advisory.get("kraken", {}).get("entry_allowed", True)
+    _hermes_entry = (hermes_advisory or {}).get("kraken", {}).get("entry_allowed", True)
     if not _hermes_entry and dd < -5:
         decisions.append(GovernorDecision(
             ts=now_iso, cycle=cycle, action="HERMES_DD_OVERRIDE", sleeve="kraken",
@@ -845,7 +846,7 @@ def run_governor(cycle: int) -> List[GovernorDecision]:
     kraken_exits = _read_recent_exits("kraken")
 
     # Evaluate each sleeve with regime context
-    all_decisions.extend(evaluate_kraken(enzo, kraken_exits, cycle))
+    all_decisions.extend(evaluate_kraken(enzo, kraken_exits, cycle, _hermes_advisory))
     all_decisions.extend(evaluate_sfm(sfm, cycle, dominant_regime))
     all_decisions.extend(evaluate_alpaca(alpaca, cycle, dominant_regime))
 
