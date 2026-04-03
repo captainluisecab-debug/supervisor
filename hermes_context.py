@@ -1,9 +1,12 @@
 """
-hermes_context.py — HERMES: Context Authority.
+hermes_context.py — HERMES: Universe Observer + Context Authority + Advisory Intelligence.
 
-ROLE: Remember, organize, track history, detect drift, preserve continuity.
-Does NOT write commands. Does NOT take live control. Feeds context to
-Governor and Opus.
+ROLE: Full observation authority across the entire universe. Learns from every
+action, trade, exit, entry, regime change, and PnL movement. Provides advice
+to Governor and Opus that improves bot functionality and PnL. Remembers,
+organizes, tracks history, detects drift, preserves continuity.
+Does NOT write command files. Does NOT take live execution control.
+But advisory MUST be read and considered by Governor and Opus.
 GOAL: Increase positive PnL. Protect capital. Reduce stupid losses.
 
 Runs every supervisor cycle. Reads all state files across the universe,
@@ -229,14 +232,75 @@ def build_context(regime_label: str, regime_confidence: float) -> dict:
     if len(_pnl_history) >= 144:
         pnl_12h_ago = _pnl_history[-144].get("universe_eq")
 
-    # Read governor decisions (last 10)
-    gov_decisions = _read_jsonl_tail(os.path.join(BASE_DIR, "governor_decisions.jsonl"), 10)
+    # ── Full universe observation — learn from every action ────────────
+    # Governor decisions
+    gov_decisions = _read_jsonl_tail(os.path.join(BASE_DIR, "governor_decisions.jsonl"), 20)
 
-    # Read posture outcomes (last 10)
+    # Posture outcomes (did the governor's posture produce good results?)
     posture_outcomes = _read_jsonl_tail(os.path.join(BASE_DIR, "governor_posture_outcomes.jsonl"), 10)
 
-    # Read Opus review memory
+    # Kraken exits — learn from every exit (what worked, what didn't)
+    kraken_exits = _read_jsonl_tail(os.path.join(ENZOBOT_DIR, "logs", "exit_counterfactuals.jsonl"), 20)
+    kraken_exit_records = [e for e in kraken_exits if e.get("type") == "exit"]
+
+    # Kraken blocked candidates — learn what entries were rejected and why
+    blocked = _read_jsonl_tail(os.path.join(ENZOBOT_DIR, "logs", "blocked_candidates.jsonl"), 20)
+
+    # SFM trade state
+    sfm_state_full = _read_json(os.path.join(SFMBOT_DIR, "sfm_state.json"))
+
+    # Alpaca trade state
+    alpaca_state_full = _read_json(os.path.join(ALPACA_DIR, "alpaca_state.json"))
+
+    # Opus review memory
     opus_memory = _read_json(os.path.join(BASE_DIR, "opus_review_memory.json"))
+
+    # ── Generate advisory insights from observations ────────────────
+    insights = []
+
+    # Insight: exit quality
+    if kraken_exit_records:
+        recent_exits = kraken_exit_records[-10:]
+        wins = sum(1 for e in recent_exits if e.get("pnl_usd", 0) > 0)
+        losses = sum(1 for e in recent_exits if e.get("pnl_usd", 0) < 0)
+        avg_pnl = sum(e.get("pnl_usd", 0) for e in recent_exits) / len(recent_exits)
+        if losses > wins * 2:
+            insights.append(f"CONCERN: last 10 exits have {losses} losses vs {wins} wins (avg ${avg_pnl:.2f})")
+        exit_reasons = {}
+        for e in recent_exits:
+            r = e.get("exit_reason", "?")
+            exit_reasons[r] = exit_reasons.get(r, 0) + 1
+        top_reason = max(exit_reasons, key=exit_reasons.get) if exit_reasons else "?"
+        insights.append(f"Top exit reason: {top_reason} ({exit_reasons.get(top_reason, 0)}/{len(recent_exits)})")
+
+    # Insight: blocking patterns
+    if blocked:
+        block_reasons = {}
+        for b in blocked[-20:]:
+            r = b.get("block_reason", "?")
+            block_reasons[r] = block_reasons.get(r, 0) + 1
+        top_block = max(block_reasons, key=block_reasons.get) if block_reasons else "?"
+        insights.append(f"Top entry blocker: {top_block} ({block_reasons.get(top_block, 0)}/20)")
+
+    # Insight: posture accuracy
+    if posture_outcomes:
+        recent_postures = posture_outcomes[-5:]
+        correct = sum(1 for p in recent_postures if p.get("verdict") == "CORRECT")
+        wrong = sum(1 for p in recent_postures if p.get("verdict") == "WRONG")
+        if wrong > correct:
+            insights.append(f"CONCERN: governor posture was WRONG {wrong}/{len(recent_postures)} times recently")
+
+    # Insight: SFM readiness
+    sfm_trades = sfm_state_full.get("total_trades", 0)
+    sfm_wins = sfm_state_full.get("winning_trades", 0)
+    if sfm_trades > 0:
+        insights.append(f"SFM: {sfm_wins}/{sfm_trades} wins ({sfm_wins/sfm_trades*100:.0f}%)")
+
+    # Insight: Alpaca quality
+    alp_trades = alpaca_state_full.get("total_trades", 0)
+    alp_wins = alpaca_state_full.get("winning_trades", 0)
+    if alp_trades > 0:
+        insights.append(f"Alpaca: {alp_wins}/{alp_trades} wins ({alp_wins/alp_trades*100:.0f}%)")
 
     # Build advisory (replaces Brain)
     advisory = compute_advisory(
@@ -285,6 +349,23 @@ def build_context(regime_label: str, regime_confidence: float) -> dict:
         # Posture outcome feedback
         "posture_outcomes": posture_outcomes[-5:],
 
+        # ── Full universe observation data ────────────────────────
+        "observation": {
+            "kraken_recent_exits": [
+                {"reason": e.get("exit_reason"), "pnl": e.get("pnl_usd"), "pair": e.get("pair")}
+                for e in kraken_exit_records[-10:]
+            ],
+            "kraken_recent_blocks": [
+                {"pair": b.get("pair"), "reason": b.get("block_reason"), "score": b.get("score")}
+                for b in blocked[-10:]
+            ],
+            "sfm_win_rate": f"{sfm_wins}/{sfm_trades}" if sfm_trades else "0/0",
+            "alpaca_win_rate": f"{alp_wins}/{alp_trades}" if alp_trades else "0/0",
+        },
+
+        # ── Hermes advisory insights (learned from observation) ───
+        "hermes_insights": insights,
+
         # Opus review memory (carried forward)
         "opus_memory": {
             "cycle_count": opus_memory.get("cycle_count", 0),
@@ -306,6 +387,10 @@ def build_context(regime_label: str, regime_confidence: float) -> dict:
     # Log significant events
     for e in events:
         log.info("[HERMES] EVENT: %s — %s", e["type"], e["detail"])
+
+    # Log advisory insights (Hermes observes and advises)
+    for insight in insights:
+        log.info("[HERMES] INSIGHT: %s", insight)
 
     _last_context_ts = now
     return context

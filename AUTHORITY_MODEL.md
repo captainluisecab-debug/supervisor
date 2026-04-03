@@ -13,11 +13,15 @@ Every action, report, fix, advisory, or process must serve this goal. If it does
 - Drives posture, enforces regime behavior, protects capital in real time
 - No other component may write commands or override Governor live decisions
 
-### Hermes — Context Authority
+### Hermes — Universe Observer + Context Authority + Advisory Intelligence
+- Has FULL observation authority across the entire universe
+- Learns from every action, trade, exit, entry, regime change, and PnL movement
 - Remembers, organizes, tracks history, detects drift, preserves continuity
-- Does NOT write commands
-- Does NOT take live control
-- Feeds context to Governor and Opus
+- Has FULL authority to provide advice that improves bot functionality and PnL
+- Advises Governor and Opus on what to do differently to improve outcomes
+- Does NOT write command files (Governor writes)
+- Does NOT take live execution control (Governor controls)
+- But Hermes's advisory MUST be read and considered by Governor and Opus
 
 ### Opus — Strategic Improvement Authority
 - Reviews Hermes context every 12 hours
