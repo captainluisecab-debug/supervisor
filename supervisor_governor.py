@@ -396,9 +396,12 @@ def _read_sfm_state() -> dict:
 def _read_alpaca_state() -> dict:
     state = _read_json(os.path.join(ALPACA_DIR, "alpaca_state.json"))
     positions = state.get("positions", {})
+    equity = 500 + state.get("realized_pnl_usd", 0)  # baseline + realized
+    dd_pct = (equity - 500) / 500 * 100 if equity < 500 else 0
     return {
         "sleeve": "alpaca",
-        "equity": 500 + state.get("realized_pnl_usd", 0),  # baseline + realized
+        "equity": equity,
+        "dd_pct": dd_pct,
         "realized_pnl": state.get("realized_pnl_usd", 0),
         "total_trades": state.get("total_trades", 0),
         "winning_trades": state.get("winning_trades", 0),
@@ -556,6 +559,7 @@ class GovernorDecision:
     reason: str
     shadow: bool         # True = logged only, False = executed live
     metrics: dict = field(default_factory=dict)
+    classification: str = ""  # ALLOW/DELAY/REDUCE/OVERRIDE/BLOCK/ESCALATE (shadow — logged only)
 
 
 def _log_decision(decision: GovernorDecision) -> None:
@@ -661,7 +665,7 @@ def evaluate_kraken(enzo_state: dict, exits: List[dict], cycle: int,
 
     # Hermes DD advisory override (tighten-only): if Hermes says no entries, block entries
     _hermes_entry = (hermes_advisory or {}).get("kraken", {}).get("entry_allowed", True)
-    if not _hermes_entry and dd < -5:
+    if not _hermes_entry:
         decisions.append(GovernorDecision(
             ts=now_iso, cycle=cycle, action="HERMES_DD_OVERRIDE", sleeve="kraken",
             reason=f"Hermes advisory: entry_allowed=false (DD={dd:.1f}%) — tighten-only override",
@@ -697,10 +701,32 @@ def evaluate_kraken(enzo_state: dict, exits: List[dict], cycle: int,
                             f"Governor: no win in {hours_since_win:.0f}h — entries frozen", "kraken",
                             force_flatten=(regime_mode == "FLAT"))
 
+    # Shadow classification (6-level — logged only, no behavior change)
+    if decisions:
+        actions = {d.action for d in decisions}
+        if "FORCE_DEFENSE" in actions or "FREEZE_ENTRIES" in actions:
+            _cls = "BLOCK"
+        elif "ALERT_FREEZE" in actions:
+            _cls = "BLOCK"
+        elif "HERMES_DD_OVERRIDE" in actions:
+            _cls = "OVERRIDE"
+        elif "REDUCE_EXPOSURE" in actions:
+            _cls = "REDUCE"
+        elif "TRADE_ACTIVE" in actions and expectancy < -0.5:
+            _cls = "DELAY"
+        elif "TRADE_ACTIVE" in actions:
+            _cls = "ALLOW"
+        elif hours_since_win > 48 or dd < -10:
+            _cls = "ESCALATE"
+        else:
+            _cls = "REDUCE"
+        decisions[0].classification = _cls
+
     return decisions
 
 
-def evaluate_sfm(sfm_state: dict, cycle: int, supervisor_regime: str) -> List[GovernorDecision]:
+def evaluate_sfm(sfm_state: dict, cycle: int, supervisor_regime: str,
+                  hermes_advisory: dict = None) -> List[GovernorDecision]:
     """Evaluate SFM sleeve with regime awareness."""
     now_iso = datetime.now(timezone.utc).isoformat()
     equity = sfm_state.get("equity", 0)
@@ -760,10 +786,39 @@ def evaluate_sfm(sfm_state: dict, cycle: int, supervisor_regime: str) -> List[Go
         _write_command_file(CMD_SFM, "SCOUT", 0.5, False,
                             f"Governor HOLD: default cautious", "sfm")
 
+    # Hermes DD advisory override (tighten-only): if Hermes says no entries, block entries
+    _sfm_dd = sfm_state.get("dd_pct", 0)
+    _hermes_entry = (hermes_advisory or {}).get("sfm", {}).get("entry_allowed", True)
+    if not _hermes_entry:
+        decisions.append(GovernorDecision(
+            ts=now_iso, cycle=cycle, action="HERMES_DD_OVERRIDE", sleeve="sfm",
+            reason=f"Hermes advisory: entry_allowed=false (DD={_sfm_dd:.1f}%) — tighten-only override",
+            shadow=SHADOW_MODE, metrics=metrics,
+        ))
+        _write_command_file(CMD_SFM, "DEFENSE", 0.0, False,
+                            f"Governor: Hermes DD override (DD={_sfm_dd:.1f}%)", "sfm")
+        log.info("[GOVERNOR] SFM Hermes DD override: entry_allowed=false (DD=%.1f%%)", _sfm_dd)
+
+    # Shadow classification (6-level)
+    if decisions:
+        actions = {d.action for d in decisions}
+        if "HERMES_DD_OVERRIDE" in actions:
+            _cls = "OVERRIDE"
+        elif "FORCE_FLAT" in actions or "HOLD_FLAT" in actions:
+            _cls = "BLOCK"
+        elif "REDUCE_EXPOSURE" in actions:
+            _cls = "REDUCE"
+        elif "TRADE_ACTIVE" in actions:
+            _cls = "ALLOW"
+        else:
+            _cls = "REDUCE"
+        decisions[0].classification = _cls
+
     return decisions
 
 
-def evaluate_alpaca(alpaca_state: dict, cycle: int, supervisor_regime: str) -> List[GovernorDecision]:
+def evaluate_alpaca(alpaca_state: dict, cycle: int, supervisor_regime: str,
+                    hermes_advisory: dict = None) -> List[GovernorDecision]:
     """Evaluate Alpaca sleeve with regime awareness."""
     now_iso = datetime.now(timezone.utc).isoformat()
     total = alpaca_state.get("total_trades", 0)
@@ -828,6 +883,34 @@ def evaluate_alpaca(alpaca_state: dict, cycle: int, supervisor_regime: str) -> L
         _write_command_file(CMD_ALPACA, "SCOUT", 0.5, False,
                             f"Governor HOLD: default cautious", "alpaca")
 
+    # Hermes DD advisory override (tighten-only): if Hermes says no entries, block entries
+    _alp_dd = alpaca_state.get("dd_pct", 0)
+    _hermes_entry = (hermes_advisory or {}).get("alpaca", {}).get("entry_allowed", True)
+    if not _hermes_entry:
+        decisions.append(GovernorDecision(
+            ts=now_iso, cycle=cycle, action="HERMES_DD_OVERRIDE", sleeve="alpaca",
+            reason=f"Hermes advisory: entry_allowed=false (DD={_alp_dd:.1f}%) — tighten-only override",
+            shadow=SHADOW_MODE, metrics=metrics,
+        ))
+        _write_command_file(CMD_ALPACA, "DEFENSE", 0.0, False,
+                            f"Governor: Hermes DD override (DD={_alp_dd:.1f}%)", "alpaca")
+        log.info("[GOVERNOR] Alpaca Hermes DD override: entry_allowed=false (DD=%.1f%%)", _alp_dd)
+
+    # Shadow classification (6-level)
+    if decisions:
+        actions = {d.action for d in decisions}
+        if "FORCE_FLAT" in actions:
+            _cls = "BLOCK"
+        elif "HERMES_DD_OVERRIDE" in actions:
+            _cls = "OVERRIDE"
+        elif "REDUCE_EXPOSURE" in actions:
+            _cls = "REDUCE"
+        elif "TRADE_ACTIVE" in actions:
+            _cls = "ALLOW"
+        else:
+            _cls = "REDUCE"
+        decisions[0].classification = _cls
+
     return decisions
 
 
@@ -863,8 +946,8 @@ def run_governor(cycle: int) -> List[GovernorDecision]:
 
     # Evaluate each sleeve with regime context
     all_decisions.extend(evaluate_kraken(enzo, kraken_exits, cycle, _hermes_advisory))
-    all_decisions.extend(evaluate_sfm(sfm, cycle, dominant_regime))
-    all_decisions.extend(evaluate_alpaca(alpaca, cycle, dominant_regime))
+    all_decisions.extend(evaluate_sfm(sfm, cycle, dominant_regime, _hermes_advisory))
+    all_decisions.extend(evaluate_alpaca(alpaca, cycle, dominant_regime, _hermes_advisory))
 
     # Log all decisions
     for d in all_decisions:

@@ -94,6 +94,87 @@ def read_recent_outcomes(n=10):
         return []
 
 
+def read_paperclip_state():
+    """Read open issues from Paperclip for loop-closure awareness."""
+    try:
+        import urllib.request
+        url = "http://127.0.0.1:3100/api/companies/f1f333d3-ad5b-48a9-8d7f-c600761d9aae/issues"
+        req = urllib.request.Request(url, headers={"Accept": "application/json"})
+        with urllib.request.urlopen(req, timeout=5) as resp:
+            issues = json.loads(resp.read().decode())
+        now = datetime.now(timezone.utc)
+        summary = {"open": [], "stale": [], "total": len(issues), "closed": 0}
+        for issue in issues:
+            status = issue.get("status", "")
+            if status in ("done", "cancelled"):
+                summary["closed"] += 1
+                continue
+            age_hours = 0
+            created = issue.get("createdAt", "")
+            if created:
+                try:
+                    ct = datetime.fromisoformat(created.replace("Z", "+00:00"))
+                    age_hours = (now - ct).total_seconds() / 3600
+                except Exception:
+                    pass
+            entry = {
+                "id": issue.get("identifier", "?"),
+                "title": issue.get("title", "")[:60],
+                "status": status,
+                "age_hours": round(age_hours, 1),
+            }
+            summary["open"].append(entry)
+            if age_hours > 48:
+                summary["stale"].append(entry["id"])
+        return summary
+    except Exception as exc:
+        return {"error": f"Paperclip unreachable: {exc}"}
+
+
+def read_and_clear_escalations():
+    """Read Hermes escalations and clear the file (consume-once pattern)."""
+    esc_file = os.path.join(BASE_DIR, "hermes_escalations.jsonl")
+    escalations = []
+    try:
+        if os.path.exists(esc_file):
+            with open(esc_file, encoding="utf-8") as f:
+                for line in f:
+                    if line.strip():
+                        try:
+                            escalations.append(json.loads(line.strip()))
+                        except Exception:
+                            pass
+            # Archive permanently before clearing
+            if escalations:
+                archive_path = os.path.join(BASE_DIR, "escalation_archive.jsonl")
+                try:
+                    with open(archive_path, "a", encoding="utf-8") as af:
+                        for esc in escalations:
+                            af.write(json.dumps({**esc, "archived_by": "opus_12h_review",
+                                                 "archived_at": datetime.now(timezone.utc).isoformat()}) + "\n")
+                except Exception:
+                    pass
+            # Clear after reading
+            with open(esc_file, "w", encoding="utf-8") as f:
+                pass
+    except Exception:
+        pass
+    return escalations
+
+
+def _read_lessons(n=20):
+    """Read last N institutional lessons from system_lessons.jsonl."""
+    lessons_path = os.path.join(BASE_DIR, "system_lessons.jsonl")
+    try:
+        if os.path.exists(lessons_path):
+            with open(lessons_path, encoding="utf-8") as f:
+                lines = f.readlines()
+            return [json.loads(l.strip()) for l in lines[-n:] if l.strip()]
+    except Exception:
+        pass
+    return []
+
+
 def read_review_memory():
     """Read persistent memory from the last 12h review."""
     try:
@@ -103,7 +184,8 @@ def read_review_memory():
     except Exception:
         pass
     return {"issues_identified": [], "issues_fixed": [], "issues_deferred": [],
-            "issues_active": [], "last_regime": None, "last_pnl": None, "cycle_count": 0}
+            "issues_active": [], "last_regime": None, "last_pnl": None, "cycle_count": 0,
+            "causal_lessons": [], "authority_violations_seen": 0, "last_reconciliation": None}
 
 
 def save_review_memory(memory):
@@ -178,7 +260,7 @@ def _get_recent_commits():
     return "\n".join(commits[-10:]) if commits else "  No recent commits found."
 
 
-def build_prompt(brief, decisions, outcomes, prev_pnl, current_pnl, review_memory=None):
+def build_prompt(brief, decisions, outcomes, prev_pnl, current_pnl, review_memory=None, paperclip_state=None, hermes_escalations=None):
     now = datetime.now(timezone.utc).isoformat()
 
     # Summarize decisions from last 12h
@@ -256,6 +338,26 @@ PERSISTENT REVIEW MEMORY (from your last 12h review — use this to avoid re-rai
   Issues deferred: {json.dumps(review_memory.get('issues_deferred', []))}
   Issues still active: {json.dumps(review_memory.get('issues_active', []))}
   Last regime: {review_memory.get('last_regime', '?') if review_memory else '?'}
+
+HERMES ESCALATIONS (urgent findings since last review — consumed on read):
+{json.dumps(hermes_escalations, indent=2) if hermes_escalations else "No pending escalations."}
+
+PAPERCLIP ISSUE STATE (loop-closure tracking):
+{json.dumps(paperclip_state, indent=2) if paperclip_state else "Paperclip state not available."}
+
+EXECUTION TRUTH (what actually executed vs what was commanded — per AUTHORITY_CONSTITUTION §4a):
+{json.dumps(_read_hermes_context().get("execution_truth", {}).get("reconciliation_summary", {}), indent=2)}
+
+AUTHORITY VIOLATIONS (BUY fills while entry_allowed=false — requires investigation):
+{json.dumps(_read_hermes_context().get("execution_truth", {}).get("authority_violations", []), indent=2) or "None."}
+
+SYSTEM LESSONS (institutional memory — do NOT re-learn these):
+{json.dumps(_read_lessons(), indent=2) if _read_lessons() else "No lessons recorded."}
+
+MEMORY CONTINUITY:
+  Authority violations seen (cumulative): {review_memory.get('authority_violations_seen', 0) if review_memory else 0}
+  Last reconciliation: {json.dumps(review_memory.get('last_reconciliation') if review_memory else None)}
+  Causal lessons carried forward: {json.dumps(review_memory.get('causal_lessons', []) if review_memory else [])}
 
 RECENT CODE CHANGES (last 3 commits per repo — do NOT re-raise issues already fixed):
 {recent_commits}
@@ -344,33 +446,121 @@ One line: better / flat / worse vs last 12h, and why.
 
 ## 9. NEXT 12H OUTLOOK
 (1-2 sentences: what to expect, what to watch)
+
+## 10. EXECUTION TRUTH & LESSON CARRY-FORWARD
+- Reconciliation summary: matched / mismatched / unresolved
+- Authority violations detected (if any): root cause and recommended action
+- New lessons learned this cycle (if any)
+- Unresolved lessons from prior cycles
+- Memory continuity: what persisted correctly, what was lost or stale
 """
 
 
+PROMPT_MAX_CHARS = 180000  # ~45K tokens safe limit for Claude CLI
+FAILURE_ARTIFACT = os.path.join(BASE_DIR, "opus_review_failure.json")
+
+# Priority order for prompt compaction (lowest priority compacted first)
+_COMPACTABLE_SECTIONS = [
+    "RECENT CODE CHANGES",          # priority 6 (lowest)
+    "RECENT BRAIN OUTCOMES",         # priority 5
+    "GOVERNOR DECISION SUMMARY",     # priority 4
+    "PERSISTENT REVIEW MEMORY",      # priority 3
+    "HERMES CONSOLIDATED CONTEXT",   # priority 2 (large, can be truncated)
+]
+# These are NEVER compacted:
+# AUTHORITY VIOLATIONS, EXECUTION TRUTH, SYSTEM LESSONS, MEMORY CONTINUITY, PAPERCLIP ISSUE STATE
+
+
+def _compact_prompt(prompt: str, target: int) -> tuple:
+    """Deterministically compact prompt to fit target size.
+    Returns (compacted_prompt, list_of_compacted_sections)."""
+    compacted = []
+    current = prompt
+    for section_name in _COMPACTABLE_SECTIONS:
+        if len(current) <= target:
+            break
+        marker = section_name
+        idx = current.find(marker)
+        if idx < 0:
+            continue
+        # Find the next section (look for the next all-caps line)
+        end_idx = idx + len(marker)
+        next_section = None
+        for line_start in range(end_idx, min(end_idx + 8000, len(current))):
+            if current[line_start:line_start + 1] == "\n":
+                rest = current[line_start + 1:line_start + 60]
+                if rest and rest == rest.upper() and ":" in rest and not rest.startswith("{"):
+                    next_section = line_start + 1
+                    break
+        if next_section and next_section - idx > 500:
+            removed_chars = next_section - idx
+            current = current[:idx] + f"{section_name} (compacted: {removed_chars} chars removed for prompt size)\n\n" + current[next_section:]
+            compacted.append(f"{section_name} (-{removed_chars} chars)")
+    return current, compacted
+
+
 def call_opus(prompt):
-    """Call Opus via claude CLI with tool access for minor fixes.
-    Uses claude -p (not --bare) so Opus can Read/Write/Edit files
-    for minor fixes in its own lane. Does not have access to governor
-    command files or live runtime state files."""
+    """Call Opus via claude CLI with prompt size management and failure artifacts.
+    Measures size, compacts if needed, logs results, creates failure artifact on error."""
+    prompt_chars = len(prompt)
+    compacted_sections = []
+
+    # Compact if over limit
+    if prompt_chars > PROMPT_MAX_CHARS:
+        prompt, compacted_sections = _compact_prompt(prompt, PROMPT_MAX_CHARS)
+        print(f"[OPUS 12H REVIEW] Prompt compacted: {prompt_chars} -> {len(prompt)} chars")
+        for cs in compacted_sections:
+            print(f"[OPUS 12H REVIEW]   Compacted: {cs}")
+
+    print(f"[OPUS 12H REVIEW] Prompt size: {len(prompt)} chars (~{len(prompt)//4} tokens)")
+
     try:
         result = subprocess.run(
-            ["claude", "-p", "--model", "opus", "--permission-mode", "acceptEdits"],
+            ["claude", "-p", "--model", "opus", "--permission-mode", "acceptEdits",
+             "--max-turns", "30", "--output-format", "text"],
             input=prompt,
             capture_output=True,
             text=True,
-            timeout=600,  # 10 min — Opus may need to read/write files
+            timeout=900,  # 15 min — Opus may read/write files
             cwd=BASE_DIR,
         )
         if result.returncode == 0 and result.stdout.strip():
+            # Clean up failure artifact if call succeeded
+            if os.path.exists(FAILURE_ARTIFACT):
+                os.remove(FAILURE_ARTIFACT)
             return result.stdout.strip()
         else:
-            return f"ERROR: claude returned code {result.returncode}\n{result.stderr[:500]}"
+            error_msg = f"ERROR: claude returned code {result.returncode}\n{result.stderr[:500]}"
+            _write_failure_artifact(prompt_chars, len(prompt), compacted_sections,
+                                    result.returncode, result.stderr[:1000])
+            return error_msg
     except FileNotFoundError:
+        _write_failure_artifact(prompt_chars, len(prompt), compacted_sections, -1, "claude CLI not found")
         return "ERROR: claude CLI not found in PATH"
     except subprocess.TimeoutExpired:
+        _write_failure_artifact(prompt_chars, len(prompt), compacted_sections, -2, "timeout after 600s")
         return "ERROR: claude call timed out after 600s"
     except Exception as exc:
+        _write_failure_artifact(prompt_chars, len(prompt), compacted_sections, -3, str(exc))
         return f"ERROR: {exc}"
+
+
+def _write_failure_artifact(original_chars, final_chars, compacted, return_code, error_detail):
+    """Write structured failure artifact so no review disappears without trace."""
+    artifact = {
+        "ts": datetime.now(timezone.utc).isoformat(),
+        "prompt_original_chars": original_chars,
+        "prompt_final_chars": final_chars,
+        "compacted_sections": compacted,
+        "return_code": return_code,
+        "error_detail": error_detail,
+    }
+    try:
+        with open(FAILURE_ARTIFACT, "w", encoding="utf-8") as f:
+            json.dump(artifact, f, indent=2)
+        print(f"[OPUS 12H REVIEW] Failure artifact written to {FAILURE_ARTIFACT}")
+    except Exception:
+        pass
 
 
 def write_report(response, brief):
@@ -426,8 +616,10 @@ def main():
     prev_pnl = read_previous_pnl()
     current_pnl = save_pnl_snapshot(brief)
     review_memory = read_review_memory()
+    paperclip_state = read_paperclip_state()
+    hermes_escalations = read_and_clear_escalations()
 
-    prompt = build_prompt(brief, decisions, outcomes, prev_pnl, current_pnl, review_memory)
+    prompt = build_prompt(brief, decisions, outcomes, prev_pnl, current_pnl, review_memory, paperclip_state, hermes_escalations)
     print(f"[OPUS 12H REVIEW] Prompt built ({len(prompt)} chars). Calling Opus...")
 
     # Open Opus review window — allows writes to bot files during this call only
@@ -466,7 +658,31 @@ def main():
     review_memory["cycle_count"] = review_memory.get("cycle_count", 0) + 1
     review_memory["last_regime"] = brief.get("dominant_regime", "?")
     review_memory["last_pnl"] = current_pnl.get("universe_equity", 0)
+    # Carry forward execution truth state
+    hermes_ctx = _read_hermes_context()
+    exec_truth = hermes_ctx.get("execution_truth", {})
+    review_memory["authority_violations_seen"] = (
+        review_memory.get("authority_violations_seen", 0) +
+        len(exec_truth.get("authority_violations", []))
+    )
+    review_memory["last_reconciliation"] = exec_truth.get("reconciliation_summary")
     save_review_memory(review_memory)
+
+    # Clear Opus agent status in Paperclip after successful review
+    try:
+        import urllib.request
+        _opus_agent_id = "ac91fe14-83c3-4e53-97d4-00b14d71cdd2"
+        _patch_data = json.dumps({"status": "idle"}).encode()
+        _req = urllib.request.Request(
+            f"http://127.0.0.1:3100/api/agents/{_opus_agent_id}",
+            data=_patch_data,
+            headers={"Content-Type": "application/json"},
+            method="PATCH",
+        )
+        urllib.request.urlopen(_req, timeout=5)
+        print("[OPUS 12H REVIEW] Paperclip agent status cleared to idle")
+    except Exception:
+        pass
 
     print(f"[OPUS 12H REVIEW] Complete. Report at {REPORT_FILE}")
 

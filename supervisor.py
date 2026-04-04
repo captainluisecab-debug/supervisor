@@ -56,7 +56,10 @@ from supervisor_calendar import get_calendar
 from supervisor_anomaly import AnomalyDetector
 from supervisor_selfheal import run_selfheal
 from supervisor_governor import run_governor
+from supervisor_kernel import run_kernel
 from hermes_context import build_context, compute_advisory
+from paperclip_bridge import run_bridge
+from command_snapshots import snapshot_commands
 
 
 def _dynamic_brain_interval(regime, portfolio) -> int:
@@ -188,11 +191,22 @@ def _run_cycle(cycle: int, peak_equity: float, anomaly_detector: AnomalyDetector
         if healed:
             log.info("[SELFHEAL] %d action(s) executed this cycle", healed)
 
-    # 5b. Governor — local deterministic control (Phase 1: shadow mode)
+    # 5a. Kernel — invariant validation gate (runs BEFORE Governor)
+    kernel_result = run_kernel(cycle)
+    if kernel_result.status == "HALT":
+        log.warning("[KERNEL] Governor SKIPPED this cycle — invariant violations")
+    else:
+        # 5b. Governor — local deterministic control
+        try:
+            gov_decisions = run_governor(cycle)
+        except Exception as exc:
+            log.error("[GOVERNOR] error: %s", exc)
+
+    # 5c. Command snapshots — persist timestamped command state for reconciliation
     try:
-        gov_decisions = run_governor(cycle)
-    except Exception as exc:
-        log.error("[GOVERNOR] error: %s", exc)
+        snapshot_commands(cycle)
+    except Exception:
+        pass
 
     # 6. Report
     report = build_report(portfolio, regime, cycle, new_peak)
@@ -206,6 +220,13 @@ def _run_cycle(cycle: int, peak_equity: float, anomaly_detector: AnomalyDetector
         log.warning("KILL SWITCH ACTIVE — all bots forced to DEFENSE via command files")
 
     log.info("Report saved → supervisor_report.json")
+
+    # 7. Paperclip bridge — loop-closure tracking (read-only, no command writes)
+    try:
+        run_bridge(cycle)
+    except Exception as exc:
+        log.debug("[PAPERCLIP] bridge error: %s", exc)
+
     return new_peak
 
 
