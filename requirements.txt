@@ -1,9 +1,6 @@
 # supervisor requirements
 # Install: pip install -r requirements.txt
 
-# Claude AI brain
-anthropic>=0.25.0
-
 # HTTP requests (regime, signals, news, correlation, social feeds)
 requests>=2.31.0
 

@@ -29,7 +29,7 @@ import os
 from datetime import datetime, timezone
 from typing import Optional
 
-from supervisor_settings import ANTHROPIC_API_KEY, COMMANDS_DIR
+from supervisor_settings import COMMANDS_DIR
 
 log = logging.getLogger("supervisor_escalation")
 
@@ -158,29 +158,31 @@ RESPOND WITH ONLY VALID JSON:
 }}"""
 
 
-# ── Opus call ─────────────────────────────────────────────────────────
+# ── Escalation packet writer (replaces Opus API call) ─────────────────
 
-def _call_opus(prompt: str) -> Optional[dict]:
-    if not ANTHROPIC_API_KEY:
-        return None
+PACKET_DIR = os.path.join(SUPERVISOR_DIR, "escalation_packets")
+os.makedirs(PACKET_DIR, exist_ok=True)
+
+
+def _write_escalation_packet(bot: str, prompt: str) -> dict:
+    """Write escalation prompt to disk for manual operator review.
+    Returns a stub result so the escalation flow archives normally."""
+    ts = datetime.now(timezone.utc).strftime("%Y%m%d_%H%M%S")
+    packet_path = os.path.join(PACKET_DIR, f"{bot}_escalation_{ts}.md")
     try:
-        import anthropic
-        client = anthropic.Anthropic(api_key=ANTHROPIC_API_KEY)
-        msg = client.messages.create(
-            model="claude-opus-4-6",
-            max_tokens=1500,
-            messages=[{"role": "user", "content": prompt}],
-        )
-        raw = msg.content[0].text.strip()
-        if raw.startswith("```"):
-            raw = raw.split("```")[1]
-            if raw.startswith("json"):
-                raw = raw[4:]
-            raw = raw.strip()
-        return json.loads(raw)
+        with open(packet_path, "w", encoding="utf-8") as f:
+            f.write(prompt)
+        log.info("[ESCALATION] Packet written for operator review: %s", packet_path)
     except Exception as exc:
-        log.error("[ESCALATION] Opus call failed: %s", exc)
-        return None
+        log.error("[ESCALATION] Failed to write packet: %s", exc)
+    return {
+        "diagnosis": f"[PACKET_WRITTEN] Escalation deferred to operator review: {packet_path}",
+        "decision": "DEFERRED_TO_OPERATOR",
+        "negotiation_outcome": "N/A",
+        "proactive_scan": "",
+        "message_to_bot": "",
+        "actions": [],
+    }
 
 
 # ── Response writer ───────────────────────────────────────────────────
@@ -349,7 +351,7 @@ def check_escalations(portfolio, regime, cycle: int) -> int:
 
         prompt = _build_escalation_prompt(request, portfolio_summary,
                                           regime_summary, recent_outcomes)
-        result = _call_opus(prompt)
+        result = _write_escalation_packet(bot, prompt)
 
         if result:
             _apply_opus_actions(bot, result.get("actions", []), cycle)

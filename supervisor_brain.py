@@ -18,20 +18,7 @@ from dataclasses import dataclass
 from datetime import datetime, timezone
 from typing import Optional
 
-try:
-    import anthropic
-    _ANTHROPIC_AVAILABLE = True
-except ImportError:
-    anthropic = None  # type: ignore[assignment]
-    _ANTHROPIC_AVAILABLE = False
-    import logging as _logging
-    _logging.getLogger("supervisor_brain").warning(
-        "anthropic package not installed — Claude brain disabled. "
-        "Install with: pip install anthropic"
-    )
-
 from supervisor_settings import (
-    ANTHROPIC_API_KEY, CLAUDE_MODEL,
     CMD_ALPACA, CMD_KRAKEN, CMD_SFM, COMMANDS_DIR,
 )
 from supervisor_memory import (
@@ -309,32 +296,7 @@ Respond with ONLY valid JSON, no markdown, no explanation outside JSON:
     return prompt
 
 
-# ── Claude call ──────────────────────────────────────────────────────
-
-def _call_claude(prompt: str) -> Optional[dict]:
-    if not _ANTHROPIC_AVAILABLE or anthropic is None:
-        log.warning("anthropic package not available — cannot call Claude")
-        return None
-    client = anthropic.Anthropic(api_key=ANTHROPIC_API_KEY)
-    try:
-        msg = client.messages.create(
-            model=CLAUDE_MODEL,
-            max_tokens=512,
-            messages=[{"role": "user", "content": prompt}],
-        )
-        text = msg.content[0].text.strip()
-        # Strip markdown code fences if present
-        if text.startswith("```"):
-            text = text.split("```")[1]
-            if text.startswith("json"):
-                text = text[4:]
-        return json.loads(text)
-    except json.JSONDecodeError as exc:
-        log.error("Claude returned invalid JSON: %s", exc)
-        return None
-    except Exception as exc:
-        log.error("Claude call failed: %s", exc)
-        return None
+# ── Claude call removed — deterministic rule engine handles all decisions ──
 
 
 # ── Command writer ───────────────────────────────────────────────────
@@ -420,13 +382,7 @@ def run_brain(portfolio, regime, history_tail: list) -> BrainDecision:
     """
     global _last_brain_decision, _last_regime_label, _last_dd_bucket, _last_call_ts
 
-    if not ANTHROPIC_API_KEY:
-        log.warning("ANTHROPIC_API_KEY not set — writing safe defaults")
-        _write_defaults("no api key")
-        return BrainDecision(SAFE_DEFAULT, SAFE_DEFAULT, SAFE_DEFAULT,
-                             "Claude unavailable", datetime.now(timezone.utc).isoformat())
-
-    # Emergency stop or kill switch — skip Claude, force DEFENSE
+    # Emergency stop or kill switch — force DEFENSE
     if portfolio.emergency_stop or portfolio.kill_switch_active:
         defense = {"mode": "DEFENSE", "size_mult": 0.0, "entry_allowed": False,
                    "reasoning": "emergency stop or kill switch active"}

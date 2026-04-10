@@ -320,13 +320,19 @@ def _read_alpaca() -> dict:
 # ── Brain replacement: deterministic advisory ─────────────────────────
 
 def _sleeve_advisory(regime_label: str, dd_pct: float, sleeve: str) -> dict:
-    """Compute advisory for a single sleeve based on its own DD."""
-    if regime_label == "RISK_OFF" or dd_pct < -5:
-        mode, size, entry = "DEFENSE", 0.3, False
-    elif regime_label == "RISK_ON" and dd_pct > -3:
+    """Compute advisory for a single sleeve based on its own DD.
+    SCOUT OFFENSE thresholds (2026-04-05): loosened to break DD catch-22.
+    DEFENSE only on severe DD (<-12%) or RISK_OFF.
+    SCOUT with reduced entries allowed between -5% and -12%.
+    NORMAL with full entries above -5%."""
+    if regime_label == "RISK_OFF" or dd_pct < -12:
+        mode, size, entry = "DEFENSE", 0.0, False
+    elif dd_pct < -5:
+        mode, size, entry = "SCOUT", 0.3, True  # reduced size, entries ALLOWED
+    elif regime_label == "RISK_ON" and dd_pct > -5:
         mode, size, entry = "NORMAL", 0.8, True
     else:
-        mode, size, entry = "SCOUT", 0.5, False
+        mode, size, entry = "SCOUT", 0.5, True
     return {"mode": mode, "size_mult": size, "entry_allowed": entry,
             "reasoning": f"Hermes advisory: {regime_label}, {sleeve} DD {dd_pct:.1f}%"}
 
@@ -497,7 +503,7 @@ def build_context(regime_label: str, regime_confidence: float) -> dict:
     posture_outcomes = _read_jsonl_tail(os.path.join(BASE_DIR, "governor_posture_outcomes.jsonl"), 10)
 
     # Kraken exits — learn from every exit (what worked, what didn't)
-    kraken_exits = _read_jsonl_tail(os.path.join(ENZOBOT_DIR, "logs", "exit_counterfactuals.jsonl"), 20)
+    kraken_exits = _read_jsonl_tail(os.path.join(ENZOBOT_DIR, "logs", "exit_counterfactuals.jsonl"), 100)
     kraken_exit_records = [e for e in kraken_exits if e.get("type") == "exit"]
 
     # Kraken blocked candidates — learn what entries were rejected and why
@@ -529,6 +535,9 @@ def build_context(regime_label: str, regime_confidence: float) -> dict:
             exit_reasons[r] = exit_reasons.get(r, 0) + 1
         top_reason = max(exit_reasons, key=exit_reasons.get) if exit_reasons else "?"
         insights.append(f"Top exit reason: {top_reason} ({exit_reasons.get(top_reason, 0)}/{len(recent_exits)})")
+        kraken_total = len(kraken_exit_records)
+        kraken_wins = sum(1 for e in kraken_exit_records if e.get("pnl_usd", 0) > 0)
+        insights.append(f"Kraken: {kraken_wins}/{kraken_total} wins ({kraken_wins/kraken_total*100:.0f}%)")
 
     # Insight: blocking patterns
     if blocked:

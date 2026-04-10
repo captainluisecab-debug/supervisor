@@ -204,7 +204,13 @@ def run_bridge(cycle: int):
             del tracked[tag]
 
     # ── Check 3: Hermes escalations → issue for Opus ─────────────
+    # Track last-archived timestamp to avoid re-archiving same entries every cycle
+    _last_archived_ts = tracked.get("_esc_archive_cursor", {}).get("ts", "")
+    _new_max_ts = _last_archived_ts
     for esc in escalations:
+        esc_ts = esc.get("ts", "")
+        if esc_ts and esc_ts <= _last_archived_ts:
+            continue  # Already archived in a prior cycle
         esc_type = esc.get("type", "unknown")
         tag = f"hermes_esc_{esc_type}"
         # Archive permanently before creating issue
@@ -213,6 +219,8 @@ def run_bridge(cycle: int):
                 _af.write(json.dumps({**esc, "paperclip_tag": tag, "cycle": cycle}) + "\n")
         except Exception:
             pass
+        if esc_ts and esc_ts > _new_max_ts:
+            _new_max_ts = esc_ts
         if tag not in tracked:
             iid = _create_issue(
                 f"Hermes escalation: {esc.get('detail', esc_type)[:60]}",
@@ -226,6 +234,9 @@ def run_bridge(cycle: int):
             )
             if iid:
                 tracked[tag] = {"id": iid, "opened_at": now_iso}
+    # Persist archive cursor to avoid re-archiving on next cycle
+    if _new_max_ts != _last_archived_ts:
+        tracked["_esc_archive_cursor"] = {"ts": _new_max_ts}
 
     # ── Check 4: Regime change → informational issue for Hermes ──
     regime_tag = "regime_current"

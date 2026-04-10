@@ -57,10 +57,7 @@ SPY_VOL_RISK_OFF      = _f("SPY_VOL_RISK_OFF_PCT",   2.5)
 
 CYCLE_SEC = _i("CYCLE_SEC", 300)
 
-# Claude brain
-ANTHROPIC_API_KEY    = _s("ANTHROPIC_API_KEY")
-CLAUDE_MODEL         = _s("CLAUDE_MODEL", "claude-sonnet-4-6")
-BRAIN_INTERVAL_CYCLES = _i("BRAIN_INTERVAL_CYCLES", 6)  # call Claude every N cycles
+BRAIN_INTERVAL_CYCLES = _i("BRAIN_INTERVAL_CYCLES", 6)
 
 # Output paths
 REPORT_FILE   = os.path.join(BASE_DIR, "supervisor_report.json")

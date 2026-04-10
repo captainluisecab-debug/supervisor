@@ -68,6 +68,44 @@ def _read_hermes_context():
     return {"note": "Hermes context not available — using governor brief as fallback"}
 
 
+def _build_hermes_brief():
+    """Pre-compute a compact brief from Hermes context for Opus prompt.
+    Extracts the 10 most important data points instead of dumping raw JSON.
+    Reduces prompt size ~60% while preserving all decision-relevant data."""
+    ctx = _read_hermes_context()
+    if "note" in ctx and "not available" in ctx.get("note", ""):
+        return ctx["note"]
+
+    u = ctx.get("universe", {})
+    k = ctx.get("kraken", {})
+    s = ctx.get("sfm", {})
+    a = ctx.get("alpaca", {})
+    reg = ctx.get("regime", {})
+    adv = ctx.get("advisory", {})
+    et = ctx.get("execution_truth", {})
+    recon = et.get("reconciliation_summary", {})
+    churn = recon.get("churn_windows", {})
+    insights = ctx.get("hermes_insights", [])
+    obs = ctx.get("observation", {})
+
+    lines = [
+        f"Universe: ${u.get('equity',0):.2f} | PnL: ${u.get('pnl_vs_baseline',0):+.2f} ({u.get('pnl_pct',0):+.1f}%) | 1h delta: ${u.get('delta_1h') or 0:+.2f} | 12h delta: ${u.get('delta_12h') or 0:+.2f}",
+        f"Regime: {reg.get('label','?')} (conf={reg.get('confidence',0):.2f})",
+        f"Kraken: ${k.get('equity',0):.2f} DD={k.get('dd_pct',0):.1f}% mode={k.get('brain_mode','?')} posture={k.get('effective_posture','?')} open={k.get('open_positions',0)} ff={k.get('force_flatten',False)}",
+        f"  Pair regime: {json.dumps(k.get('pair_regime',{}))}",
+        f"SFM: ${s.get('equity',0):.2f} DD={s.get('dd_pct',0):.1f}% trades={s.get('total_trades',0)} wins={s.get('winning_trades',0)} position={s.get('open_position',False)}",
+        f"Alpaca: ${a.get('equity',0):.2f} trades={a.get('total_trades',0)} wins={a.get('winning_trades',0)} open={a.get('open_positions',0)}",
+        f"Advisory: K={adv.get('kraken',{}).get('mode','?')}/entry={adv.get('kraken',{}).get('entry_allowed','?')} S={adv.get('sfm',{}).get('mode','?')}/entry={adv.get('sfm',{}).get('entry_allowed','?')} A={adv.get('alpaca',{}).get('mode','?')}/entry={adv.get('alpaca',{}).get('entry_allowed','?')}",
+        f"Execution truth: {recon.get('total_executions',0)} total, {recon.get('buys',0)} buys, {recon.get('sells',0)} sells, {recon.get('force_flattens',0)} ff, {recon.get('violations_count',0)} violations",
+        f"  Last BUY: {(recon.get('last_buy_ts') or 'none')[:19]} | Last SELL: {(recon.get('last_sell_ts') or 'none')[:19]}",
+        f"Churn: 1h={churn.get('1h',{}).get('repeated_entry_loops',0)} loops 6h={churn.get('6h',{}).get('repeated_entry_loops',0)} 24h={churn.get('24h',{}).get('repeated_entry_loops',0)} loops/${churn.get('24h',{}).get('churn_pnl_drain',0):.2f}",
+        f"Exit quality: {obs.get('kraken_recent_exits',[])}",
+        f"Entry blocks: {obs.get('kraken_recent_blocks',[])}",
+        f"Insights: {insights}",
+    ]
+    return "\n".join(lines)
+
+
 def read_brief():
     try:
         with open(BRIEF_FILE, encoding="utf-8") as f:
@@ -307,8 +345,8 @@ YOUR ALLOWED FIX SCOPE:
 YOUR FORBIDDEN SCOPE:
 {json.dumps(OPUS_FIX_SCOPE["forbidden"], indent=2)}
 
-HERMES CONSOLIDATED CONTEXT (single source of truth — replaces scattered file reads):
-{json.dumps(_read_hermes_context(), indent=2)}
+HERMES CONTEXT BRIEF (pre-computed from hermes_context.json — local-first optimization):
+{_build_hermes_brief()}
 
 GOVERNOR UNIVERSE BRIEF:
 {json.dumps(brief, indent=2)}
@@ -465,7 +503,7 @@ _COMPACTABLE_SECTIONS = [
     "RECENT BRAIN OUTCOMES",         # priority 5
     "GOVERNOR DECISION SUMMARY",     # priority 4
     "PERSISTENT REVIEW MEMORY",      # priority 3
-    "HERMES CONSOLIDATED CONTEXT",   # priority 2 (large, can be truncated)
+    "HERMES CONTEXT BRIEF",          # priority 2 (already compact, can be truncated further)
 ]
 # These are NEVER compacted:
 # AUTHORITY VIOLATIONS, EXECUTION TRUTH, SYSTEM LESSONS, MEMORY CONTINUITY, PAPERCLIP ISSUE STATE
@@ -620,28 +658,20 @@ def main():
     hermes_escalations = read_and_clear_escalations()
 
     prompt = build_prompt(brief, decisions, outcomes, prev_pnl, current_pnl, review_memory, paperclip_state, hermes_escalations)
-    print(f"[OPUS 12H REVIEW] Prompt built ({len(prompt)} chars). Calling Opus...")
+    print(f"[OPUS 12H REVIEW] Prompt built ({len(prompt)} chars). Writing packet for manual Opus review...")
 
-    # Open Opus review window — allows writes to bot files during this call only
+    # Write packet file for operator/Opus review — no API call
+    packet_file = os.path.join(BASE_DIR, "opus_review_packet.md")
     try:
-        os.makedirs(os.path.dirname(REVIEW_WINDOW), exist_ok=True)
-        with open(REVIEW_WINDOW, "w") as f:
-            f.write(f"opus_12h_review active since {ts}")
-        print(f"[OPUS 12H REVIEW] Review window opened")
+        with open(packet_file, "w", encoding="utf-8") as _pf:
+            _pf.write(f"# Opus 12h Review Packet\nGenerated: {ts}\n\n")
+            _pf.write(prompt)
+        print(f"[OPUS 12H REVIEW] Packet written to {packet_file}")
     except Exception as exc:
-        print(f"[OPUS 12H REVIEW] WARNING: could not open review window: {exc}")
+        print(f"[OPUS 12H REVIEW] WARNING: could not write packet: {exc}")
 
-    try:
-        response = call_opus(prompt)
-    finally:
-        # Always close the review window, even on error
-        try:
-            if os.path.exists(REVIEW_WINDOW):
-                os.remove(REVIEW_WINDOW)
-                print(f"[OPUS 12H REVIEW] Review window closed")
-        except Exception:
-            pass
-    print(f"[OPUS 12H REVIEW] Response received ({len(response)} chars)")
+    response = f"[PACKET_WRITTEN] Review packet written to {packet_file} at {ts}. Awaiting manual Opus review."
+    print(f"[OPUS 12H REVIEW] Packet ready ({len(prompt)} chars)")
 
     # Log the review event
     log_fix({

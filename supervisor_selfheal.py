@@ -30,7 +30,7 @@ from datetime import datetime, timezone
 from typing import List, Optional
 
 from supervisor_anomaly import Anomaly, AnomalyReport
-from supervisor_settings import ANTHROPIC_API_KEY, COMMANDS_DIR
+from supervisor_settings import COMMANDS_DIR
 
 log = logging.getLogger("supervisor_selfheal")
 
@@ -402,33 +402,7 @@ def _execute_alert_human(action: dict, cycle: int):
     _log_action(action, f"ALERT RAISED: {msg}", cycle)
 
 
-# ── Opus call ─────────────────────────────────────────────────────────
-
-def _call_opus(prompt: str) -> Optional[dict]:
-    if not ANTHROPIC_API_KEY:
-        log.warning("[SELFHEAL] No ANTHROPIC_API_KEY — cannot call Opus")
-        return None
-    try:
-        import anthropic
-        client = anthropic.Anthropic(api_key=ANTHROPIC_API_KEY)
-        msg = client.messages.create(
-            model="claude-opus-4-6",
-            max_tokens=1024,
-            messages=[{"role": "user", "content": prompt}],
-        )
-        raw = msg.content[0].text.strip()
-        if raw.startswith("```"):
-            raw = raw.split("```")[1]
-            if raw.startswith("json"):
-                raw = raw[4:]
-            raw = raw.strip()
-        return json.loads(raw)
-    except json.JSONDecodeError as exc:
-        log.error("[SELFHEAL] Opus returned invalid JSON: %s", exc)
-        return None
-    except Exception as exc:
-        log.error("[SELFHEAL] Opus call failed: %s", exc)
-        return None
+# ── Opus call removed — detect and log only (no auto-prescribe) ───────
 
 
 # ── Main entry point ──────────────────────────────────────────────────
@@ -462,52 +436,3 @@ def run_selfheal(report: AnomalyReport, portfolio_summary: str,
         _mark_healed(a.code)
     run_selfheal._prev_active_codes = current_codes
     return 0
-
-    log.info("[SELFHEAL] Calling Opus to diagnose %d anomalies: %s",
-             len(active), ", ".join(a.code for a in active))
-
-    # Build report with only active anomalies
-    active_report = AnomalyReport(anomalies=active, cycle=cycle, ts=report.ts)
-    prompt = _build_prompt(active_report, portfolio_summary, regime_summary)
-
-    result = _call_opus(prompt)
-    if not result:
-        log.warning("[SELFHEAL] Opus diagnosis failed — no actions taken")
-        return 0
-
-    diagnosis = result.get("diagnosis", "")
-    priority  = result.get("priority", "MEDIUM")
-    actions   = result.get("actions", [])
-
-    log.info("[SELFHEAL] Diagnosis [%s]: %s", priority, diagnosis)
-    log.info("[SELFHEAL] Opus prescribed %d actions", len(actions))
-
-    executed = 0
-    for action in actions:
-        action_type = action.get("type", "")
-
-        if action_type == "adjust_policy_json":
-            _execute_adjust_policy_json(action, cycle)
-        elif action_type == "adjust_env":
-            _execute_adjust_env(action, cycle)
-        elif action_type == "clear_lock":
-            _execute_clear_lock(action, cycle)
-        elif action_type == "write_supervisor_cmd":
-            _execute_write_supervisor_cmd(action, cycle)
-        elif action_type == "restart_bot":
-            _execute_restart_bot(action, cycle)
-        elif action_type == "alert_human":
-            _execute_alert_human(action, cycle)
-        else:
-            log.warning("[SELFHEAL] Unknown action type: %s", action_type)
-            _log_action(action, f"REJECTED: unknown type '{action_type}'", cycle)
-            continue
-
-        executed += 1
-
-    # Mark all active anomaly codes as healed (start cooldown)
-    for a in active:
-        _mark_healed(a.code)
-
-    log.info("[SELFHEAL] Executed %d/%d prescribed actions", executed, len(actions))
-    return executed
