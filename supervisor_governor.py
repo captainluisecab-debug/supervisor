@@ -44,7 +44,7 @@ SFMBOT_DIR  = r"C:\Projects\sfmbot"
 ALPACA_DIR  = r"C:\Projects\alpacabot"
 
 # Thresholds
-EXPECTANCY_FREEZE_THRESHOLD  = -2.0   # SCOUT OFFENSE: raised from -1.0 to clear contaminated baseline (force_flatten exits polluted rolling expectancy)
+EXPECTANCY_FREEZE_THRESHOLD  = -3.5   # Loosened from -2.0 (2026-04-10): tight threshold caused repeated freeze cycles. Strategy needs room to recover before lock-out.
 DD_ACCEL_THRESHOLD_PER_HOUR  = 0.5    # force DEFENSE if DD worsens > 0.5%/hour
 CHURN_EXIT_LIMIT_PER_HOUR    = 3      # churn detected if > 3 exits in 1 hour
 PAIR_CONSEC_LOSS_LIMIT       = 3      # block pair after 3 consecutive losses
