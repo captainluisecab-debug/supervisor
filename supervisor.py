@@ -117,7 +117,7 @@ def _load_history_tail(n: int = 3) -> list:
 
 
 def _run_cycle(cycle: int, peak_equity: float, anomaly_detector: AnomalyDetector) -> float:
-    log.info("── CYCLE %d ──────────────────────────────────────", cycle)
+    log.info("== CYCLE %d ==========================================", cycle)
 
     if os.path.exists(STOP_FILE):
         log.warning("EMERGENCY_STOP.txt detected")
