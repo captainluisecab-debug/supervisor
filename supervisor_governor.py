@@ -760,14 +760,15 @@ def evaluate_kraken(enzo_state: dict, exits: List[dict], cycle: int,
 
     if hours_since_win > NO_WIN_ALERT_HOURS and exits and open_pos > 0:
         decisions.append(GovernorDecision(
-            ts=now_iso, cycle=cycle, action="ALERT_FREEZE", sleeve="kraken",
-            reason=f"No profitable exit in {hours_since_win:.0f} hours — entries blocked",
+            ts=now_iso, cycle=cycle, action="ALERT", sleeve="kraken",
+            reason=f"No profitable exit in {hours_since_win:.0f} hours — monitoring (entries still allowed)",
             shadow=SHADOW_MODE, metrics=metrics,
         ))
-        # Tighten-only: block entries when the bot can't produce wins
-        _write_command_file(CMD_KRAKEN, "DEFENSE", 0.0, False,
-                            f"Governor: no win in {hours_since_win:.0f}h — entries frozen", "kraken",
-                            force_flatten=(regime_mode == "FLAT"))
+        # LESSON-008: Do NOT freeze entries here — creates deadlock.
+        # Existing positions can still exit profitably. Blocking new entries
+        # prevents the system from recovering. Alert only, no command override.
+        log.warning("[GOVERNOR] No win in %.0fh — alert raised (no entry freeze, deadlock prevention)",
+                    hours_since_win)
 
     # Shadow classification (6-level — logged only, no behavior change)
     if decisions:
