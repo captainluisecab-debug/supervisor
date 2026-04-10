@@ -44,7 +44,7 @@ SFMBOT_DIR  = r"C:\Projects\sfmbot"
 ALPACA_DIR  = r"C:\Projects\alpacabot"
 
 # Thresholds
-EXPECTANCY_FREEZE_THRESHOLD  = -1.0   # freeze entries if rolling expectancy < this
+EXPECTANCY_FREEZE_THRESHOLD  = -2.0   # SCOUT OFFENSE: raised from -1.0 to clear contaminated baseline (force_flatten exits polluted rolling expectancy)
 DD_ACCEL_THRESHOLD_PER_HOUR  = 0.5    # force DEFENSE if DD worsens > 0.5%/hour
 CHURN_EXIT_LIMIT_PER_HOUR    = 3      # churn detected if > 3 exits in 1 hour
 PAIR_CONSEC_LOSS_LIMIT       = 3      # block pair after 3 consecutive losses
@@ -65,12 +65,12 @@ REGIME_BEHAVIOR = {
         "description": "Trade actively. Full conviction on sustained uptrends.",
     },
     "RANGING": {
-        "mode": "REDUCE",
-        "entries_allowed": False,
-        "size_mult": 0.0,
+        "mode": "SCOUT",                # SCOUT OFFENSE: allow reduced entries in RANGING
+        "entries_allowed": True,         # was False — RANGING is not hostile, allow learning
+        "size_mult": 0.3,               # 30% normal size — controlled exposure
         "max_positions": 2,
-        "reduce_positions": True,   # actively close breakeven/small-loss positions
-        "description": "No new entries. Reduce toward flat. Chop kills trend-followers.",
+        "reduce_positions": False,       # don't actively close — let positions run to stops/targets
+        "description": "Scout mode. Small entries allowed. Reduced sizing. Learn from ranging conditions.",
     },
     "TRENDING_DOWN": {
         "mode": "FLAT",
@@ -196,7 +196,7 @@ def _write_kraken_truth(enzo_state: dict, decisions: list, dominant_regime: str)
             "pair_regime": enzo_state.get("pair_regime", {}),
         },
         "governor_decisions": [
-            {"action": d.action, "reason": d.reason[:80]} for d in kraken_decisions
+            {"action": d.action, "reason": d.reason[:200]} for d in kraken_decisions
         ],
         "command": {
             "mode": cmd.get("mode", "?"),
@@ -375,7 +375,9 @@ def _read_enzobot_state() -> dict:
         "dd_pct": feedback.get("portfolio", {}).get("dd_pct", 0),
         "cash": feedback.get("portfolio", {}).get("cash", 0),
         "open_positions": feedback.get("portfolio", {}).get("open_positions", 0),
+        "portfolio": feedback.get("portfolio", {}),
         "pair_regime": feedback.get("pair_regime", {}),
+        "pair_scores": feedback.get("pair_scores", {}),
         "mode": brain.get("active_mode", "UNKNOWN"),
     }
 
@@ -412,11 +414,24 @@ def _read_alpaca_state() -> dict:
 
 
 def _read_recent_exits(sleeve: str) -> List[dict]:
-    """Read recent exit records from exit_counterfactuals.jsonl (Kraken) or service logs."""
+    """Read recent exit records from exit_counterfactuals.jsonl (Kraken) or service logs.
+    Deduplicates by (pair, entry_price, exit_reason) — engine logs each exit
+    twice with slightly different timestamps/IDs, which contaminates rolling
+    expectancy if not filtered."""
     if sleeve == "kraken":
         path = os.path.join(ENZOBOT_DIR, "logs", "exit_counterfactuals.jsonl")
-        records = _read_jsonl_tail(path, 100)
-        return [r for r in records if r.get("type") == "exit"]
+        records = _read_jsonl_tail(path, 200)
+        exits = [r for r in records if r.get("type") == "exit"]
+        seen = set()
+        deduped = []
+        for e in exits:
+            # Dedup key: same pair + same entry price + same exit reason = same trade
+            key = (e.get("pair", ""), e.get("entry_price", 0), e.get("exit_reason", ""))
+            if key in seen:
+                continue
+            seen.add(key)
+            deduped.append(e)
+        return deduped
     return []
 
 
@@ -459,7 +474,8 @@ def get_regime_behavior(dominant_regime: str) -> dict:
 
 def _write_command_file(path: str, mode: str, size_mult: float,
                         entry_allowed: bool, reasoning: str, bot: str,
-                        force_flatten: bool = False) -> None:
+                        force_flatten: bool = False,
+                        pair_scout_override: bool = False) -> None:
     """Write a command file for a bot sleeve. Only used when SHADOW_MODE=False."""
     if SHADOW_MODE:
         return
@@ -473,6 +489,8 @@ def _write_command_file(path: str, mode: str, size_mult: float,
         "ts": datetime.now(timezone.utc).isoformat(),
         "source": "governor",
     }
+    if pair_scout_override:
+        cmd["pair_scout_override"] = True
     try:
         tmp = path + ".tmp"
         with open(tmp, "w", encoding="utf-8") as f:
@@ -484,10 +502,18 @@ def _write_command_file(path: str, mode: str, size_mult: float,
 
 # ── Metric computation ────────────────────────────────────────────────
 
+EXPECTANCY_DECAY_INTERVAL_SEC = 43200  # 12 hours — decay period
+EXPECTANCY_DECAY_RATE = 0.20           # 20% decay per interval toward zero
+
 def compute_rolling_expectancy(exits: List[dict], n: int = 20) -> float:
     """Compute rolling expectancy from last N trading exits.
     Excludes governor_force_flatten exits — those are deliberate capital
-    preservation, not trading failures."""
+    preservation, not trading failures.
+
+    DEADLOCK PREVENTION: If the most recent exit is older than
+    EXPECTANCY_DECAY_INTERVAL_SEC, the raw expectancy decays toward 0
+    by EXPECTANCY_DECAY_RATE per interval. This prevents negative expectancy
+    from permanently blocking entries when no trades can occur."""
     # Filter out force_flatten exits
     trading_exits = [e for e in exits if e.get("exit_reason") != "governor_force_flatten"]
     recent = trading_exits[-n:] if len(trading_exits) >= n else trading_exits
@@ -500,7 +526,21 @@ def compute_rolling_expectancy(exits: List[dict], n: int = 20) -> float:
     win_rate = len(wins) / len(recent)
     avg_win = sum(wins) / len(wins) if wins else 0
     avg_loss = sum(losses) / len(losses) if losses else 0
-    return (win_rate * avg_win) + ((1 - win_rate) * avg_loss)
+    raw = (win_rate * avg_win) + ((1 - win_rate) * avg_loss)
+
+    # Time-decay: if no recent exits, decay negative expectancy toward 0
+    if raw < 0 and recent:
+        last_ts = recent[-1].get("ts", 0)
+        if last_ts:
+            age_sec = time.time() - last_ts
+            if age_sec > EXPECTANCY_DECAY_INTERVAL_SEC:
+                intervals = age_sec / EXPECTANCY_DECAY_INTERVAL_SEC
+                decay_factor = (1 - EXPECTANCY_DECAY_RATE) ** intervals
+                decayed = raw * decay_factor
+                log.info("[GOVERNOR] Expectancy decay: raw=%.2f age=%.1fh intervals=%.1f -> decayed=%.2f",
+                         raw, age_sec / 3600, intervals, decayed)
+                return decayed
+    return raw
 
 
 def compute_dd_rate(equity_history: List[tuple]) -> float:
@@ -650,6 +690,34 @@ def evaluate_kraken(enzo_state: dict, exits: List[dict], cycle: int,
         _write_command_file(CMD_KRAKEN, "NORMAL", behavior["size_mult"], True,
                             f"Governor TRADE: {dominant}", "kraken")
 
+    # ── Pair-level scout exception (paper mode learning) ──────────────
+    # When dominant regime is FLAT/REDUCE but individual pairs show UP with
+    # high score, allow micro-scout entries on those pairs only.
+    # This breaks the binary regime gate without weakening true defense.
+    # Max 1 scout position. 15% normal size. Top-score UP pairs only.
+    if regime_mode in ("FLAT", "REDUCE") and not SHADOW_MODE:
+        _pair_regime = enzo_state.get("pair_regime", {})
+        _up_pairs = [p for p, r in _pair_regime.items() if r == "UP"]
+        # Check if any UP pair has a strong score (from pair_scores in state)
+        _pair_scores = enzo_state.get("pair_scores", {})
+        _scout_candidates = [(p, _pair_scores.get(p, 0)) for p in _up_pairs
+                             if float(_pair_scores.get(p, 0)) >= 75.0]
+        _scout_candidates.sort(key=lambda x: -x[1])
+        _open_count = enzo_state.get("portfolio", {}).get("open_positions", 0)
+
+        if _scout_candidates and _open_count < 1:
+            _best_pair, _best_score = _scout_candidates[0]
+            decisions.append(GovernorDecision(
+                ts=now_iso, cycle=cycle, action="PAIR_SCOUT_OVERRIDE", sleeve="kraken",
+                reason=f"Pair-level scout: {_best_pair} regime=UP score={_best_score:.0f} in dominant {dominant}. Micro-size entry allowed.",
+                shadow=SHADOW_MODE, metrics=metrics,
+            ))
+            _write_command_file(CMD_KRAKEN, "SCOUT", 0.15, True,
+                                f"Governor: pair-scout {_best_pair} (score={_best_score:.0f}, UP in {dominant})",
+                                "kraken", force_flatten=False, pair_scout_override=True)
+            log.info("[GOVERNOR] PAIR_SCOUT_OVERRIDE: %s score=%.0f in %s — micro entry allowed (15%% size)",
+                     _best_pair, _best_score, dominant)
+
     # ── Metric-driven overrides (tighten-only, override regime if worse) ──
     if expectancy < EXPECTANCY_FREEZE_THRESHOLD:
         decisions.append(GovernorDecision(
@@ -690,7 +758,7 @@ def evaluate_kraken(enzo_state: dict, exits: List[dict], cycle: int,
             shadow=SHADOW_MODE, metrics=metrics,
         ))
 
-    if hours_since_win > NO_WIN_ALERT_HOURS and exits:
+    if hours_since_win > NO_WIN_ALERT_HOURS and exits and open_pos > 0:
         decisions.append(GovernorDecision(
             ts=now_iso, cycle=cycle, action="ALERT_FREEZE", sleeve="kraken",
             reason=f"No profitable exit in {hours_since_win:.0f} hours — entries blocked",

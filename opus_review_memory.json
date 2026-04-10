@@ -1,0 +1,25 @@
+{
+  "issues_identified": ["LESSON-007: duplicate exit logging", "LESSON-008: expectancy deadlock"],
+  "issues_fixed": ["LESSON-007: dedup in _read_recent_exits()", "LESSON-008: expectancy time-decay", "orphaned brain_pending.json removed"],
+  "issues_deferred": ["Paperclip unreachable (needs restart)", "Alpaca 25% win rate (needs strategy review)"],
+  "issues_active": [],
+  "last_regime": "TRENDING_UP",
+  "last_pnl": 6550.51,
+  "cycle_count": 23,
+  "authority_violations_seen": 68,
+  "last_reconciliation": {
+    "total_executions": 50,
+    "buys": 24,
+    "sells": 26,
+    "force_flattens": 0,
+    "violations_count": 8,
+    "last_execution_ts": "2026-04-09T19:02:11.493408+00:00",
+    "last_buy_ts": "2026-04-09T19:02:11.493408+00:00",
+    "last_sell_ts": "2026-04-08T21:32:38.358018+00:00",
+    "churn_windows": {
+      "1h": {"buys": 0, "force_flattens": 0, "unauthorized_entries": 0, "churn_pnl_drain": 0, "repeated_entry_loops": 0},
+      "6h": {"buys": 2, "force_flattens": 0, "unauthorized_entries": 0, "churn_pnl_drain": 0, "repeated_entry_loops": 0},
+      "24h": {"buys": 3, "force_flattens": 0, "unauthorized_entries": 0, "churn_pnl_drain": 0, "repeated_entry_loops": 0}
+    }
+  }
+}
