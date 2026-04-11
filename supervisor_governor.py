@@ -706,6 +706,16 @@ def evaluate_kraken(enzo_state: dict, exits: List[dict], cycle: int,
         _write_command_file(CMD_KRAKEN, "NORMAL", behavior["size_mult"], True,
                             f"Governor TRADE: {dominant}", "kraken")
 
+    elif regime_mode == "SCOUT":
+        # RANGING with SCOUT OFFENSE: reduced-size entries allowed
+        decisions.append(GovernorDecision(
+            ts=now_iso, cycle=cycle, action="SCOUT_ACTIVE", sleeve="kraken",
+            reason=f"Regime={dominant} -> SCOUT mode. Reduced-size entries allowed.",
+            shadow=SHADOW_MODE, metrics=metrics,
+        ))
+        _write_command_file(CMD_KRAKEN, "SCOUT", behavior["size_mult"], True,
+                            f"Governor SCOUT: {dominant}", "kraken")
+
     # ── Pair-level scout exception (paper mode learning) ──────────────
     # When dominant regime is FLAT/REDUCE but individual pairs show UP with
     # high score, allow micro-scout entries on those pairs only.
