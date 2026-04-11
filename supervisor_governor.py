@@ -625,9 +625,25 @@ def evaluate_kraken(enzo_state: dict, exits: List[dict], cycle: int,
     behavior = get_regime_behavior(dominant)
     regime_mode = behavior["mode"]  # TRADE / REDUCE / FLAT
 
-    # Track regime history
+    # Track regime history. On regime change, force a fresh cmd write so the
+    # bot is always guided by current-regime behavior, not last-decision regime.
+    _regime_changed = False
     if not _regime_history or _regime_history[-1][1] != dominant:
+        _regime_changed = (len(_regime_history) > 0)  # don't trigger on first cycle
         _regime_history.append((time.time(), dominant))
+    if _regime_changed:
+        _new_mode = "NORMAL" if behavior.get("mode") == "TRADE" else \
+                    "SCOUT" if behavior.get("mode") == "SCOUT" else "DEFENSE"
+        _new_size = float(behavior.get("size_mult", 0.3))
+        _new_entry = bool(behavior.get("entries_allowed", False))
+        _write_command_file(
+            CMD_KRAKEN, _new_mode, _new_size, _new_entry,
+            f"Regime changed to {dominant} — refreshing cmd to match new behavior",
+            "kraken",
+            force_flatten=(behavior.get("mode") == "FLAT"),
+        )
+        log.info("[GOVERNOR] Regime changed to %s — wrote fresh cmd: mode=%s size=%.1fx entry=%s",
+                 dominant, _new_mode, _new_size, _new_entry)
 
     # Track equity for DD rate
     _equity_history.append((time.time(), equity))
