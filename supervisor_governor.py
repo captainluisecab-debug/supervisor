@@ -472,10 +472,15 @@ def get_regime_behavior(dominant_regime: str) -> dict:
     return REGIME_BEHAVIOR.get(dominant_regime, DEFAULT_BEHAVIOR)
 
 
+CAUTIOUS_PHASE_HOURS = 6  # hours after regime change before trusting the trend
+
 def _write_command_file(path: str, mode: str, size_mult: float,
                         entry_allowed: bool, reasoning: str, bot: str,
                         force_flatten: bool = False,
-                        pair_scout_override: bool = False) -> None:
+                        pair_scout_override: bool = False,
+                        trend_phase: str = "",
+                        trend_phase_hours: float = 0.0,
+                        max_positions: int = 0) -> None:
     """Write a command file for a bot sleeve. Only used when SHADOW_MODE=False."""
     if SHADOW_MODE:
         return
@@ -491,6 +496,11 @@ def _write_command_file(path: str, mode: str, size_mult: float,
     }
     if pair_scout_override:
         cmd["pair_scout_override"] = True
+    if trend_phase:
+        cmd["trend_phase"] = trend_phase
+        cmd["trend_phase_hours"] = round(trend_phase_hours, 1)
+    if max_positions > 0:
+        cmd["max_positions"] = max_positions
     try:
         tmp = path + ".tmp"
         with open(tmp, "w", encoding="utf-8") as f:
@@ -645,6 +655,13 @@ def evaluate_kraken(enzo_state: dict, exits: List[dict], cycle: int,
         log.info("[GOVERNOR] Regime changed to %s — wrote fresh cmd: mode=%s size=%.1fx entry=%s",
                  dominant, _new_mode, _new_size, _new_entry)
 
+    # ── Trend phase: cautious (0-6h) vs proven (6h+) ───────────────
+    # Early trends are unproven and frequently reverse. Reduce exposure
+    # until the trend has survived CAUTIOUS_PHASE_HOURS.
+    _regime_age_sec = time.time() - _regime_history[-1][0] if _regime_history else 0
+    _regime_age_hours = _regime_age_sec / 3600
+    _trend_phase = "early" if _regime_age_hours < CAUTIOUS_PHASE_HOURS else "proven"
+
     # Track equity for DD rate
     _equity_history.append((time.time(), equity))
     cutoff = time.time() - 7200
@@ -697,24 +714,46 @@ def evaluate_kraken(enzo_state: dict, exits: List[dict], cycle: int,
                             f"Governor REDUCE: {dominant}", "kraken")
 
     elif regime_mode == "TRADE":
-        # TRENDING_UP: allow entries at full size
+        # TRENDING_UP: allow entries — phase-adjusted sizing
+        if _trend_phase == "early":
+            _phase_size = round(behavior["size_mult"] * 0.5, 2)
+            _phase_max_pos = 2
+            _phase_label = f"TRADE (CAUTIOUS — trend {_regime_age_hours:.1f}h < {CAUTIOUS_PHASE_HOURS}h)"
+        else:
+            _phase_size = behavior["size_mult"]
+            _phase_max_pos = 5
+            _phase_label = f"TRADE (PROVEN — trend {_regime_age_hours:.1f}h)"
         decisions.append(GovernorDecision(
             ts=now_iso, cycle=cycle, action="TRADE_ACTIVE", sleeve="kraken",
-            reason=f"Regime={dominant} -> TRADE mode. Entries allowed.",
+            reason=f"Regime={dominant} -> {_phase_label}. Entries allowed.",
             shadow=SHADOW_MODE, metrics=metrics,
         ))
-        _write_command_file(CMD_KRAKEN, "NORMAL", behavior["size_mult"], True,
-                            f"Governor TRADE: {dominant}", "kraken")
+        _write_command_file(CMD_KRAKEN, "NORMAL", _phase_size, True,
+                            f"Governor {_phase_label}: {dominant}", "kraken",
+                            trend_phase=_trend_phase,
+                            trend_phase_hours=_regime_age_hours,
+                            max_positions=_phase_max_pos)
 
     elif regime_mode == "SCOUT":
-        # RANGING with SCOUT OFFENSE: reduced-size entries allowed
+        # RANGING with SCOUT OFFENSE: reduced-size entries — phase-adjusted
+        if _trend_phase == "early":
+            _phase_size = round(behavior["size_mult"] * 0.5, 2)
+            _phase_max_pos = 2
+            _phase_label = f"SCOUT (CAUTIOUS — trend {_regime_age_hours:.1f}h < {CAUTIOUS_PHASE_HOURS}h)"
+        else:
+            _phase_size = behavior["size_mult"]
+            _phase_max_pos = 3
+            _phase_label = f"SCOUT (PROVEN — trend {_regime_age_hours:.1f}h)"
         decisions.append(GovernorDecision(
             ts=now_iso, cycle=cycle, action="SCOUT_ACTIVE", sleeve="kraken",
-            reason=f"Regime={dominant} -> SCOUT mode. Reduced-size entries allowed.",
+            reason=f"Regime={dominant} -> {_phase_label}. Reduced-size entries allowed.",
             shadow=SHADOW_MODE, metrics=metrics,
         ))
-        _write_command_file(CMD_KRAKEN, "SCOUT", behavior["size_mult"], True,
-                            f"Governor SCOUT: {dominant}", "kraken")
+        _write_command_file(CMD_KRAKEN, "SCOUT", _phase_size, True,
+                            f"Governor {_phase_label}: {dominant}", "kraken",
+                            trend_phase=_trend_phase,
+                            trend_phase_hours=_regime_age_hours,
+                            max_positions=_phase_max_pos)
 
     # ── Pair-level scout exception (paper mode learning) ──────────────
     # When dominant regime is FLAT/REDUCE but individual pairs show UP with
