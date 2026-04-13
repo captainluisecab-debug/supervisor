@@ -756,11 +756,10 @@ def evaluate_kraken(enzo_state: dict, exits: List[dict], cycle: int,
                             max_positions=_phase_max_pos)
 
     # ── Pair-level scout exception (paper mode learning) ──────────────
-    # When dominant regime is FLAT/REDUCE but individual pairs show UP with
-    # high score, allow micro-scout entries on those pairs only.
-    # This breaks the binary regime gate without weakening true defense.
-    # Max 1 scout position. 15% normal size. Top-score UP pairs only.
-    if regime_mode in ("FLAT", "REDUCE") and not SHADOW_MODE:
+    # REDUCE only — NOT FLAT. In FLAT, the system is going to cash, period.
+    # Pair-scout in FLAT caused a -$305 loss: scout opened a position,
+    # next governor cycle force-flattened it. Never override FORCE_FLAT.
+    if regime_mode == "REDUCE" and not SHADOW_MODE:
         _pair_regime = enzo_state.get("pair_regime", {})
         _up_pairs = [p for p, r in _pair_regime.items() if r == "UP"]
         # Check if any UP pair has a strong score (from pair_scores in state)
