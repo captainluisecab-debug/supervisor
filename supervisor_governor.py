@@ -515,28 +515,39 @@ def _write_command_file(path: str, mode: str, size_mult: float,
 EXPECTANCY_DECAY_INTERVAL_SEC = 43200  # 12 hours — decay period
 EXPECTANCY_DECAY_RATE = 0.20           # 20% decay per interval toward zero
 
+EXPECTANCY_RECENCY_HALFLIFE = 10  # exits — weight halves every 10 exits back
+
 def compute_rolling_expectancy(exits: List[dict], n: int = 20) -> float:
     """Compute rolling expectancy from last N trading exits.
     Excludes governor_force_flatten exits — those are deliberate capital
     preservation, not trading failures.
 
+    RECENCY WEIGHTING: recent exits count more than old ones. Half-life
+    of 10 exits means exit #20 (oldest) has ~25% the weight of exit #1
+    (newest). A crash 3 days ago fades out as fresh wins replace it.
+
     DEADLOCK PREVENTION: If the most recent exit is older than
     EXPECTANCY_DECAY_INTERVAL_SEC, the raw expectancy decays toward 0
-    by EXPECTANCY_DECAY_RATE per interval. This prevents negative expectancy
-    from permanently blocking entries when no trades can occur."""
+    by EXPECTANCY_DECAY_RATE per interval."""
     # Filter out force_flatten exits
     trading_exits = [e for e in exits if e.get("exit_reason") != "governor_force_flatten"]
     recent = trading_exits[-n:] if len(trading_exits) >= n else trading_exits
     if not recent:
         return 0.0
-    wins = [e["pnl_usd"] for e in recent if e.get("pnl_usd", 0) > 0]
-    losses = [e["pnl_usd"] for e in recent if e.get("pnl_usd", 0) < 0]
-    if not wins and not losses:
-        return 0.0
-    win_rate = len(wins) / len(recent)
-    avg_win = sum(wins) / len(wins) if wins else 0
-    avg_loss = sum(losses) / len(losses) if losses else 0
-    raw = (win_rate * avg_win) + ((1 - win_rate) * avg_loss)
+
+    # Recency-weighted expectancy: newest exit = weight 1.0, oldest = ~0.25
+    import math
+    _decay = math.log(2) / max(1, EXPECTANCY_RECENCY_HALFLIFE)
+    total_weight = 0.0
+    weighted_pnl = 0.0
+    for i, e in enumerate(recent):
+        age = len(recent) - 1 - i  # 0 = newest, len-1 = oldest
+        w = math.exp(-_decay * age)
+        pnl = e.get("pnl_usd", 0)
+        weighted_pnl += pnl * w
+        total_weight += w
+
+    raw = weighted_pnl / total_weight if total_weight > 0 else 0.0
 
     # Time-decay: if no recent exits, decay negative expectancy toward 0
     if raw < 0 and recent:
