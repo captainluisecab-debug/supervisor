@@ -25,7 +25,7 @@ from typing import Optional
 log = logging.getLogger("adaptive_brain")
 
 REVIEW_COOLDOWN_SEC = 1800  # min 30 min between reviews
-MODEL = "claude-sonnet-4-20250514"  # fast + cheap for tactical decisions
+MODEL = "claude-sonnet-4-6"  # latest Sonnet — best reasoning at same cost
 
 
 def _load_api_key() -> str:
