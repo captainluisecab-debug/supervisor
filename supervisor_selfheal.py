@@ -222,11 +222,18 @@ def _execute_adjust_policy_json(action: dict, cycle: int):
         _log_action(action, msg, cycle)
 
 
+_ENV_ACTION_COUNT = {"count": 0, "day": ""}
+
 def _execute_adjust_env(action: dict, cycle: int):
-    # DISABLED — governor owns runtime. .env is operator-write-only.
-    log.warning("[SELFHEAL] adjust_env SUPPRESSED: %s", json.dumps(action)[:120])
-    _log_action(action, "SUPPRESSED — governor owns runtime", cycle)
-    return
+    today = time.strftime("%Y-%m-%d")
+    if _ENV_ACTION_COUNT["day"] != today:
+        _ENV_ACTION_COUNT["count"] = 0
+        _ENV_ACTION_COUNT["day"] = today
+    if _ENV_ACTION_COUNT["count"] >= 3:
+        log.warning("[SELFHEAL] adjust_env RATE LIMITED (3/day max)")
+        _log_action(action, "RATE LIMITED — 3/day max reached", cycle)
+        return
+    _ENV_ACTION_COUNT["count"] += 1
 
     bot    = action.get("bot", "enzobot")
     key    = action.get("key", "")
@@ -313,11 +320,18 @@ def _execute_clear_lock(action: dict, cycle: int):
         _log_action(action, msg, cycle)
 
 
+_CMD_ACTION_COUNT = {"count": 0, "day": ""}
+
 def _execute_write_supervisor_cmd(action: dict, cycle: int):
-    # DISABLED — governor is the single command file writer.
-    log.warning("[SELFHEAL] write_supervisor_cmd SUPPRESSED: %s", json.dumps(action)[:120])
-    _log_action(action, "SUPPRESSED — governor owns commands", cycle)
-    return
+    today = time.strftime("%Y-%m-%d")
+    if _CMD_ACTION_COUNT["day"] != today:
+        _CMD_ACTION_COUNT["count"] = 0
+        _CMD_ACTION_COUNT["day"] = today
+    if _CMD_ACTION_COUNT["count"] >= 2:
+        log.warning("[SELFHEAL] write_supervisor_cmd RATE LIMITED (2/day max)")
+        _log_action(action, "RATE LIMITED — 2/day max reached", cycle)
+        return
+    _CMD_ACTION_COUNT["count"] += 1
 
     # Normalize bot name — Opus may return "enzobot"/"sfmbot"/"alpacabot"
     _bot_alias = {"enzobot": "kraken", "sfmbot": "sfm", "alpacabot": "alpaca"}
@@ -363,19 +377,23 @@ def _execute_write_supervisor_cmd(action: dict, cycle: int):
         _log_action(action, msg, cycle)
 
 
+_RESTART_ACTION_COUNT = {"count": 0, "day": ""}
+
 def _execute_restart_bot(action: dict, cycle: int):
     bot    = action.get("bot", "enzobot")
     reason = action.get("reason", "selfheal")
 
-    # TEMPORARILY SUPPRESSED (2026-03-24): selfheal restart loop was preventing
-    # lockout clearance (68 restarts/day resetting cycle counter). DEFEND transition
-    # approved by operator but cannot activate while restarts keep firing.
-    # Anomaly detection and logging continue. Only the restart action is suppressed.
-    # Remove this block to re-enable restart_bot.
-    msg = f"SUPPRESSED: restart_bot for {bot} — selfheal restart temporarily disabled | {reason}"
-    log.warning("[SELFHEAL] %s", msg)
-    _log_action(action, msg, cycle)
-    return
+    today = time.strftime("%Y-%m-%d")
+    if _RESTART_ACTION_COUNT["day"] != today:
+        _RESTART_ACTION_COUNT["count"] = 0
+        _RESTART_ACTION_COUNT["day"] = today
+    if _RESTART_ACTION_COUNT["count"] >= 3:
+        log.warning("[SELFHEAL] restart_bot RATE LIMITED (3/day max) — escalating to human")
+        _log_action(action, "RATE LIMITED — 3 restarts/day max. Escalating.", cycle)
+        _execute_alert_human({"severity": "HIGH", "message": f"restart_bot for {bot} exceeded 3/day limit",
+                              "reason": reason}, cycle)
+        return
+    _RESTART_ACTION_COUNT["count"] += 1
 
     bot_dirs = {"enzobot": ENZOBOT_DIR, "sfmbot": SFMBOT_DIR, "alpacabot": ALPACA_DIR}
     bot_dir  = bot_dirs.get(bot, ENZOBOT_DIR)
@@ -402,7 +420,48 @@ def _execute_alert_human(action: dict, cycle: int):
     _log_action(action, f"ALERT RAISED: {msg}", cycle)
 
 
-# ── Opus call removed — detect and log only (no auto-prescribe) ───────
+# ── Opus diagnosis ───────────────────────────────────────────────────
+
+_OPUS_SELFHEAL_COOLDOWN = 1800  # 30 min between Opus calls
+_OPUS_SELFHEAL_LAST_TS = 0
+_OPUS_SELFHEAL_ACTIONS_TODAY = {"count": 0, "day": ""}
+
+EXECUTOR_MAP = {
+    "adjust_policy_json":   _execute_adjust_policy_json,
+    "adjust_env":           _execute_adjust_env,
+    "clear_lock":           _execute_clear_lock,
+    "write_supervisor_cmd": _execute_write_supervisor_cmd,
+    "restart_bot":          _execute_restart_bot,
+    "alert_human":          _execute_alert_human,
+}
+
+
+def _call_opus_diagnosis(prompt: str) -> Optional[dict]:
+    try:
+        api_key = ""
+        env_path = os.path.join(SUPERVISOR_DIR, ".env")
+        if os.path.exists(env_path):
+            for line in open(env_path, encoding="utf-8"):
+                if line.strip().startswith("ANTHROPIC_API_KEY="):
+                    api_key = line.strip().split("=", 1)[1].strip().strip('"').strip("'")
+        if not api_key:
+            return None
+        import anthropic
+        client = anthropic.Anthropic(api_key=api_key)
+        resp = client.messages.create(
+            model="claude-sonnet-4-20250514",
+            max_tokens=500,
+            messages=[{"role": "user", "content": prompt}],
+        )
+        text = resp.content[0].text.strip()
+        if text.startswith("```"):
+            text = text.split("```")[1]
+            if text.startswith("json"):
+                text = text[4:]
+        return json.loads(text)
+    except Exception as exc:
+        log.error("[SELFHEAL] Opus diagnosis failed: %s", exc)
+        return None
 
 
 # ── Main entry point ──────────────────────────────────────────────────
@@ -410,29 +469,77 @@ def _execute_alert_human(action: dict, cycle: int):
 def run_selfheal(report: AnomalyReport, portfolio_summary: str,
                  regime_summary: str, cycle: int) -> int:
     """
-    Diagnose anomalies and execute remediations.
+    Phase 2: Opus-powered diagnosis + rate-limited execution.
     Returns number of actions executed.
     """
+    global _OPUS_SELFHEAL_LAST_TS
+
     if not report.anomalies:
         return 0
 
-    # Filter out anomalies on cooldown
     active = [a for a in report.anomalies if not _on_cooldown(a.code)]
     if not active:
-        # Suppressed: do not log "all on cooldown" every cycle — pure noise
         return 0
 
-    # PHASE 1: Opus call DISABLED — detect and log only, no auto-prescribe.
-    # Deduplicated: only log new anomalies, not repeats of known active ones.
+    # Dedup: only log NEW anomalies
     if not hasattr(run_selfheal, "_prev_active_codes"):
         run_selfheal._prev_active_codes = set()
     current_codes = {a.code for a in active}
     new_codes = current_codes - run_selfheal._prev_active_codes
+
     for a in active:
         if a.code in new_codes:
-            log.warning("[SELFHEAL] NEW ANOMALY (no auto-action): %s — %s", a.code, a.description[:120])
-            _log_action({"type": "detected", "anomaly": a.code, "description": a.description[:200]},
-                         f"DETECTED — no auto-prescribe (Phase 1)", cycle)
+            log.warning("[SELFHEAL] NEW ANOMALY: %s -- %s", a.code, a.description[:120])
         _mark_healed(a.code)
     run_selfheal._prev_active_codes = current_codes
-    return 0
+
+    # Rate limit: Opus call max every 30 min, max 6 total actions/day
+    today = time.strftime("%Y-%m-%d")
+    if _OPUS_SELFHEAL_ACTIONS_TODAY["day"] != today:
+        _OPUS_SELFHEAL_ACTIONS_TODAY["count"] = 0
+        _OPUS_SELFHEAL_ACTIONS_TODAY["day"] = today
+
+    if _OPUS_SELFHEAL_ACTIONS_TODAY["count"] >= 6:
+        log.info("[SELFHEAL] Daily action limit (6) reached — detect only")
+        _log_action({"type": "rate_limited"}, "DAILY LIMIT — 6 actions/day", cycle)
+        return 0
+
+    elapsed = time.time() - _OPUS_SELFHEAL_LAST_TS
+    if elapsed < _OPUS_SELFHEAL_COOLDOWN and not new_codes:
+        return 0
+
+    if not new_codes:
+        return 0
+
+    # Call Opus for diagnosis
+    prompt = _build_prompt(report, portfolio_summary, regime_summary)
+    log.info("[SELFHEAL] Calling Opus for diagnosis (%d active anomalies)", len(active))
+    diagnosis = _call_opus_diagnosis(prompt)
+
+    if not diagnosis:
+        _log_action({"type": "opus_call_failed"}, "Opus diagnosis returned None", cycle)
+        return 0
+
+    _OPUS_SELFHEAL_LAST_TS = time.time()
+
+    actions = diagnosis.get("actions", [])
+    diag_text = diagnosis.get("diagnosis", "")
+    priority = diagnosis.get("priority", "MEDIUM")
+    log.info("[SELFHEAL] Opus diagnosis: %s (priority=%s, %d actions)", diag_text[:100], priority, len(actions))
+    _log_action({"type": "opus_diagnosis", "diagnosis": diag_text, "priority": priority,
+                 "action_count": len(actions)}, f"DIAGNOSED — {len(actions)} actions prescribed", cycle)
+
+    executed = 0
+    for action in actions:
+        action_type = action.get("type", "")
+        executor = EXECUTOR_MAP.get(action_type)
+        if not executor:
+            log.warning("[SELFHEAL] Unknown action type: %s", action_type)
+            _log_action(action, f"REJECTED — unknown action type '{action_type}'", cycle)
+            continue
+        log.info("[SELFHEAL] Executing: %s", json.dumps(action)[:150])
+        executor(action, cycle)
+        executed += 1
+        _OPUS_SELFHEAL_ACTIONS_TODAY["count"] += 1
+
+    return executed

@@ -43,7 +43,7 @@ CMD_FILES = {
 # Simple approach: check ET hour = 9 using UTC - 4 (EDT) for spring/summer
 # For winter, brief will fire at 8:00 AM ET — acceptable early notice
 
-FIRE_HOUR_ET = 9      # 9 AM ET
+FIRE_HOURS_ET = [8, 20]  # 8 AM + 8 PM ET
 ET_OFFSET    = 4      # EDT (UTC-4); covers most of trading season
 
 
@@ -73,19 +73,17 @@ def _save_last_fired(date_str: str) -> None:
 
 def should_fire() -> bool:
     """
-    Return True if the morning brief should fire right now.
-    Conditions:
-      - Weekday (Mon–Fri)
-      - ET hour == FIRE_HOUR_ET  (9 AM ET)
-      - Not already fired today
+    Return True if the brief should fire right now.
+    Fires at 8:02 AM and 8:02 PM ET, any day (crypto runs 24/7).
+    Deduped by hour so it fires once per window.
     """
     now_et = _et_now()
-    if now_et.weekday() >= 5:         # Sat=5, Sun=6
+    if now_et.hour not in FIRE_HOURS_ET:
         return False
-    if now_et.hour != FIRE_HOUR_ET:
+    if now_et.minute < 2:
         return False
-    today = now_et.strftime("%Y-%m-%d")
-    if _load_last_fired() == today:
+    fire_key = now_et.strftime("%Y-%m-%d") + f"_{now_et.hour}"
+    if _load_last_fired() == fire_key:
         return False
     return True
 
@@ -177,14 +175,16 @@ def generate_brief(portfolio, regime, allocations, recent_outcomes,
         cmd_key = key.split("_")[0]  # kraken / sfm / alpaca
         cmd = _read_cmd(cmd_key)
         health_flag = "  <-- WARN" if s.health == "WARN" else ("  <-- CRITICAL" if s.health == "CRITICAL" else "")
+        _entry_str = "YES" if cmd.get("entry_allowed", True) else "NO"
+        _flatten_str = " FORCE_FLATTEN" if cmd.get("force_flatten") else ""
         lines += [
             f"  [{label}]",
             f"    Equity:    ${s.equity_usd:,.2f}  (baseline ${s.baseline_usd:,.2f})",
             f"    PnL:       ${s.pnl_usd:+,.2f}  ({s.pnl_pct:+.1f}%)",
             f"    Drawdown:  {s.drawdown_pct:.2f}%{health_flag}",
-            f"    Positions: {s.open_positions}  |  Health: {s.health}",
-            f"    Brain cmd: {cmd.get('mode','?')} {cmd.get('size_mult',0):.1f}x  entry={'YES' if cmd.get('entry_allowed', True) else 'NO'}",
-            f"    Reasoning: {cmd.get('reasoning','—')[:80]}",
+            f"    Positions: {s.open_positions}  |  Health: {s.health}  |  Mode: {s.mode}",
+            f"    Governor:  {cmd.get('mode','?')} {cmd.get('size_mult',0):.1f}x  entry={_entry_str}{_flatten_str}",
+            f"    Reason:    {cmd.get('reasoning','--')[:80]}",
         ]
         if s.notes:
             for note in s.notes:
@@ -391,5 +391,5 @@ def fire_morning_brief(portfolio, regime, allocations, recent_outcomes,
         log.info("[BRIEF] %s", line)
 
     now_et  = _et_now()
-    _save_last_fired(now_et.strftime("%Y-%m-%d"))
-    log.info("[BRIEF] Morning brief complete.")
+    _save_last_fired(now_et.strftime("%Y-%m-%d") + f"_{now_et.hour}")
+    log.info("[BRIEF] Brief complete (%d:02 ET).", now_et.hour)

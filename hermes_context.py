@@ -303,8 +303,17 @@ def _read_sfm() -> dict:
 
 def _read_alpaca() -> dict:
     state = _read_json(os.path.join(ALPACA_DIR, "alpaca_state.json"))
-    equity = 500 + state.get("realized_pnl_usd", 0)
-    dd_pct = (equity - 500) / 500 * 100 if equity < 500 else 0
+    from supervisor_settings import ALPACA_API_KEY, ALPACA_SECRET_KEY, ALPACA_BASELINE
+    equity = ALPACA_BASELINE + state.get("realized_pnl_usd", 0)
+    try:
+        from alpaca.trading.client import TradingClient
+        client = TradingClient(ALPACA_API_KEY, ALPACA_SECRET_KEY,
+                               paper=ALPACA_API_KEY.startswith("PK"))
+        acct = client.get_account()
+        equity = float(acct.equity)
+    except Exception:
+        pass
+    dd_pct = min(0.0, (equity - ALPACA_BASELINE) / ALPACA_BASELINE * 100) if ALPACA_BASELINE > 0 else 0
     return {
         "sleeve": "alpaca",
         "equity": equity,

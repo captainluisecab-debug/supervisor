@@ -334,6 +334,15 @@ def _adjust_regime_threshold():
 
 # ── Data readers ──────────────────────────────────────────────────────
 
+def _parse_ts(ts_str: str) -> float:
+    try:
+        from datetime import datetime, timezone
+        dt = datetime.fromisoformat(ts_str.replace("Z", "+00:00"))
+        return dt.timestamp()
+    except Exception:
+        return 0.0
+
+
 def _read_json(path: str) -> dict:
     try:
         if os.path.exists(path):
@@ -477,13 +486,27 @@ CAUTIOUS_PHASE_HOURS = 6  # hours after regime change before trusting the trend
 def _write_command_file(path: str, mode: str, size_mult: float,
                         entry_allowed: bool, reasoning: str, bot: str,
                         force_flatten: bool = False,
-                        pair_scout_override: bool = False,
                         trend_phase: str = "",
                         trend_phase_hours: float = 0.0,
                         max_positions: int = 0) -> None:
     """Write a command file for a bot sleeve. Only used when SHADOW_MODE=False."""
     if SHADOW_MODE:
         return
+    # Apply strategic directive size adjustment if available
+    _strat_file = os.path.join(BASE_DIR, "opus_strategic_directive.json")
+    try:
+        if os.path.exists(_strat_file) and size_mult > 0:
+            _sd = _read_json(_strat_file)
+            _age = (time.time() - _parse_ts(_sd.get("_meta", {}).get("ts", ""))) / 3600
+            if _age < 14:
+                _sleeve_key = {"kraken": "kraken", "sfm": "sfm", "alpaca": "alpaca"}.get(bot, "")
+                _dir = _sd.get(f"{_sleeve_key}_directive", {})
+                _posture = _dir.get("posture", "HOLD")
+                _strat_mult = {"AGGRESSIVE": 1.2, "MODERATE": 0.8, "DEFENSIVE": 0.4, "HOLD": 1.0}.get(_posture, 1.0)
+                if _strat_mult != 1.0:
+                    size_mult = round(size_mult * _strat_mult, 2)
+    except Exception:
+        pass
     cmd = {
         "mode": mode,
         "size_mult": round(size_mult, 2),
@@ -494,8 +517,6 @@ def _write_command_file(path: str, mode: str, size_mult: float,
         "ts": datetime.now(timezone.utc).isoformat(),
         "source": "governor",
     }
-    if pair_scout_override:
-        cmd["pair_scout_override"] = True
     if trend_phase:
         cmd["trend_phase"] = trend_phase
         cmd["trend_phase_hours"] = round(trend_phase_hours, 1)
@@ -767,32 +788,6 @@ def evaluate_kraken(enzo_state: dict, exits: List[dict], cycle: int,
                             max_positions=_phase_max_pos)
 
     # ── Pair-level scout exception (paper mode learning) ──────────────
-    # REDUCE only — NOT FLAT. In FLAT, the system is going to cash, period.
-    # Pair-scout in FLAT caused a -$305 loss: scout opened a position,
-    # next governor cycle force-flattened it. Never override FORCE_FLAT.
-    if regime_mode == "REDUCE" and not SHADOW_MODE:
-        _pair_regime = enzo_state.get("pair_regime", {})
-        _up_pairs = [p for p, r in _pair_regime.items() if r == "UP"]
-        # Check if any UP pair has a strong score (from pair_scores in state)
-        _pair_scores = enzo_state.get("pair_scores", {})
-        _scout_candidates = [(p, _pair_scores.get(p, 0)) for p in _up_pairs
-                             if float(_pair_scores.get(p, 0)) >= 75.0]
-        _scout_candidates.sort(key=lambda x: -x[1])
-        _open_count = enzo_state.get("portfolio", {}).get("open_positions", 0)
-
-        if _scout_candidates and _open_count < 1:
-            _best_pair, _best_score = _scout_candidates[0]
-            decisions.append(GovernorDecision(
-                ts=now_iso, cycle=cycle, action="PAIR_SCOUT_OVERRIDE", sleeve="kraken",
-                reason=f"Pair-level scout: {_best_pair} regime=UP score={_best_score:.0f} in dominant {dominant}. Micro-size entry allowed.",
-                shadow=SHADOW_MODE, metrics=metrics,
-            ))
-            _write_command_file(CMD_KRAKEN, "SCOUT", 0.15, True,
-                                f"Governor: pair-scout {_best_pair} (score={_best_score:.0f}, UP in {dominant})",
-                                "kraken", force_flatten=False, pair_scout_override=True)
-            log.info("[GOVERNOR] PAIR_SCOUT_OVERRIDE: %s score=%.0f in %s — micro entry allowed (15%% size)",
-                     _best_pair, _best_score, dominant)
-
     # ── Metric-driven overrides (tighten-only, override regime if worse) ──
     if expectancy < EXPECTANCY_FREEZE_THRESHOLD:
         decisions.append(GovernorDecision(
@@ -1079,6 +1074,23 @@ def run_governor(cycle: int) -> List[GovernorDecision]:
     _hermes_advisory = _hermes_ctx.get("advisory", {})
     _brain_note = _hermes_advisory.get("note", "")
 
+    # Read Opus strategic directive (12h review output — influences size_mult)
+    _strategic = _read_json(os.path.join(BASE_DIR, "opus_strategic_directive.json"))
+    _strat_ts = _strategic.get("_meta", {}).get("ts", "")
+    _strat_age_h = (time.time() - _parse_ts(_strat_ts)) / 3600 if _strat_ts else 999
+    if _strategic and _strat_age_h < 14:
+        _k_dir = _strategic.get("kraken_directive", {})
+        _s_dir = _strategic.get("sfm_directive", {})
+        _a_dir = _strategic.get("alpaca_directive", {})
+        _posture_map = {"AGGRESSIVE": 1.2, "MODERATE": 0.8, "DEFENSIVE": 0.4, "HOLD": 1.0}
+        for _sleeve_key, _dir in [("kraken", _k_dir), ("sfm", _s_dir), ("alpaca", _a_dir)]:
+            _posture = _dir.get("posture", "HOLD")
+            _mult = _posture_map.get(_posture, 1.0)
+            _hermes_advisory.setdefault(_sleeve_key, {})["strategic_size_mult"] = _mult
+        log.info("[GOVERNOR] Strategic directive loaded (age=%.1fh): K=%s S=%s A=%s",
+                 _strat_age_h,
+                 _k_dir.get("posture", "?"), _s_dir.get("posture", "?"), _a_dir.get("posture", "?"))
+
     # AUTHORITATIVE regime: Governor classifies from per-pair data (most granular).
     # Brain uses macro regime (RISK_ON/OFF) for advisory only — governor overrides.
     # No duplication conflict: governor decides, brain advises.
@@ -1092,6 +1104,52 @@ def run_governor(cycle: int) -> List[GovernorDecision]:
     all_decisions.extend(evaluate_kraken(enzo, kraken_exits, cycle, _hermes_advisory))
     all_decisions.extend(evaluate_sfm(sfm, cycle, dominant_regime, _hermes_advisory))
     all_decisions.extend(evaluate_alpaca(alpaca, cycle, dominant_regime, _hermes_advisory))
+
+    # ── Cross-sleeve correlation guard ─────────────────────────────────
+    # If both crypto sleeves (Kraken + SFM) are >70% deployed AND BTC dropped
+    # >3% in last hour, force both to 50% size to reduce correlated exposure.
+    _k_deploy = enzo.get("portfolio", {}).get("deployed_pct", 0)
+    _s_deploy = 100.0 if sfm.get("open_position") else 0.0
+    _btc_1h = enzo.get("btc_1h_pct", 0)
+    if _k_deploy > 70 and _s_deploy > 70 and _btc_1h < -3.0:
+        now_iso = datetime.now(timezone.utc).isoformat()
+        log.warning("[GOVERNOR] CORRELATION GUARD: both crypto sleeves >70%% deployed "
+                    "AND BTC -%s%% in 1h — reducing to 50%% size", abs(_btc_1h))
+        for _sleeve, _cmd_path in [("kraken", CMD_KRAKEN), ("sfm", CMD_SFM)]:
+            _write_command_file(_cmd_path, "SCOUT", 0.5, True,
+                                f"Governor: correlation guard — BTC {_btc_1h:.1f}% 1h, both crypto >70% deployed",
+                                _sleeve)
+        all_decisions.append(GovernorDecision(
+            ts=now_iso, cycle=cycle, action="CORRELATION_GUARD", sleeve="kraken+sfm",
+            reason=f"BTC {_btc_1h:.1f}% 1h, both >70% deployed — reduced to 50% size",
+            shadow=SHADOW_MODE, metrics={},
+        ))
+
+    # ── Universe DD circuit breaker ──────────────────────────────────
+    # If total universe equity drops >5% in any 4h window, all sleeves go DEFENSE.
+    _total_eq_now = enzo.get("equity", 0) + sfm.get("equity", 0) + alpaca.get("equity", 0)
+    if not hasattr(run_governor, "_equity_history"):
+        run_governor._equity_history = []
+    run_governor._equity_history.append((_total_eq_now, time.time()))
+    run_governor._equity_history = [(e, t) for e, t in run_governor._equity_history
+                                    if time.time() - t < 14400]
+    if len(run_governor._equity_history) >= 2:
+        _oldest_eq, _oldest_ts = run_governor._equity_history[0]
+        if _oldest_eq > 0:
+            _uni_dd_4h = (_total_eq_now - _oldest_eq) / _oldest_eq * 100
+            if _uni_dd_4h < -5.0:
+                now_iso = datetime.now(timezone.utc).isoformat()
+                log.warning("[GOVERNOR] UNIVERSE CIRCUIT BREAKER: equity dropped %.1f%% "
+                            "in 4h ($%.2f -> $%.2f) — ALL DEFENSE", _uni_dd_4h, _oldest_eq, _total_eq_now)
+                for _sleeve, _cmd_path in [("kraken", CMD_KRAKEN), ("sfm", CMD_SFM), ("alpaca", CMD_ALPACA)]:
+                    _write_command_file(_cmd_path, "DEFENSE", 0.0, False,
+                                        f"Governor: universe circuit breaker — {_uni_dd_4h:.1f}% in 4h",
+                                        _sleeve, force_flatten=False)
+                all_decisions.append(GovernorDecision(
+                    ts=now_iso, cycle=cycle, action="UNIVERSE_CIRCUIT_BREAKER", sleeve="ALL",
+                    reason=f"Universe equity {_uni_dd_4h:.1f}% in 4h — all DEFENSE",
+                    shadow=SHADOW_MODE, metrics={},
+                ))
 
     # Log all decisions
     for d in all_decisions:

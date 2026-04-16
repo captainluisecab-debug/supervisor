@@ -112,8 +112,7 @@ def _check_dd_override_respected() -> List[str]:
 
 
 def _check_regime_behavior_respected() -> List[str]:
-    """INV-3: If regime maps to no-entry behavior, no command file allows entries.
-    Exception: Kraken pair_scout_override with mode=SCOUT and open_positions <= 1."""
+    """INV-3: If regime maps to no-entry behavior, no command file allows entries."""
     violations = []
     truth = _read_json(KRAKEN_TRUTH_FILE)
     dominant = truth.get("regime", {}).get("dominant", "RANGING")
@@ -122,15 +121,6 @@ def _check_regime_behavior_respected() -> List[str]:
         for sleeve, path in SLEEVE_CMD_MAP.items():
             cmd = _read_json(path)
             if cmd.get("entry_allowed") is True:
-                # Pair-scout exemption: Kraken only, SCOUT mode, flag present, <= 1 open position
-                if (sleeve == "kraken"
-                        and cmd.get("pair_scout_override") is True
-                        and cmd.get("mode") == "SCOUT"):
-                    open_pos = truth.get("portfolio", {}).get("open_positions", 0)
-                    if open_pos <= 1:
-                        log.info("[KERNEL] INV-3 EXEMPTED: pair_scout_override active "
-                                 "(sleeve=kraken, mode=SCOUT, open_pos=%d)", open_pos)
-                        continue
                 violations.append(
                     f"INV-3: regime={dominant} (no entries) but {sleeve}_cmd has entry_allowed=true"
                 )
@@ -138,8 +128,7 @@ def _check_regime_behavior_respected() -> List[str]:
 
 
 def _check_expectancy_freeze_respected() -> List[str]:
-    """INV-4: If Kraken expectancy < threshold, entries must be blocked.
-    Exception: pair_scout_override with mode=SCOUT and open_positions <= 1."""
+    """INV-4: If Kraken expectancy < threshold, entries must be blocked."""
     violations = []
     exits = _read_jsonl_tail(EXIT_LOG, 40)
     if not exits:
@@ -148,15 +137,6 @@ def _check_expectancy_freeze_respected() -> List[str]:
     if expectancy < EXPECTANCY_FREEZE_THRESHOLD:
         cmd = _read_json(CMD_KRAKEN)
         if cmd.get("entry_allowed") is True:
-            # Pair-scout exemption: flag present, SCOUT mode, <= 1 open position
-            if (cmd.get("pair_scout_override") is True
-                    and cmd.get("mode") == "SCOUT"):
-                truth = _read_json(KRAKEN_TRUTH_FILE)
-                open_pos = truth.get("portfolio", {}).get("open_positions", 0)
-                if open_pos <= 1:
-                    log.info("[KERNEL] INV-4 EXEMPTED: pair_scout_override active "
-                             "(expectancy=%.2f, open_pos=%d)", expectancy, open_pos)
-                    return violations
             violations.append(
                 f"INV-4: expectancy={expectancy:.2f} < {EXPECTANCY_FREEZE_THRESHOLD} "
                 f"but kraken_cmd has entry_allowed=true"

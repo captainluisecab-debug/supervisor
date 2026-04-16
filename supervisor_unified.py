@@ -121,6 +121,8 @@ def _read_enzobot() -> BotSnapshot:
             if qty <= 0:
                 continue
             cost_usd   = qty * avg_price
+            if cost_usd < 1.0:
+                continue
             # Use last_price if available, otherwise mark at cost (no unrealized calc)
             # Guard: last_price=0.0 is falsy — falls back to avg_price (matches supervisor_portfolio.py)
             last_price = float(p.get("last_price") or avg_price)

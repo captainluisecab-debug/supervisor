@@ -88,14 +88,22 @@ def read_enzobot() -> SleeveState:
     # Compute dd_pct from equity and equity_peak (state.json has no "drawdown_pct" field)
     eq_peak  = float(state.get("equity_peak", ENZOBOT_BASELINE))
     dd_pct   = ((equity - eq_peak) / eq_peak * 100) if eq_peak > 0 else 0.0
-    mode     = brain.get("active_mode", "UNKNOWN")
-    # brain_state.json uses "last_change_cycle" not "cycle"
+    brain_mode = brain.get("active_mode", "UNKNOWN")
+    _gov_cmd = {}
+    try:
+        _cmd_path = os.path.join(os.path.dirname(os.path.abspath(__file__)), "commands", "kraken_cmd.json")
+        if os.path.exists(_cmd_path):
+            with open(_cmd_path) as _cf: _gov_cmd = json.load(_cf)
+    except Exception:
+        pass
+    _gov_entry = "TRADE" if _gov_cmd.get("entry_allowed") else "BLOCK"
+    mode = f"{brain_mode}|{_gov_entry}"
     cycle    = int(brain.get("last_change_cycle", state.get("cycle", 0)))
     open_ct  = sum(1 for p in pos.values() if float(p.get("qty", 0)) > 0) if isinstance(pos, dict) else 0
 
     notes = []
-    if mode == "DEFEND":
-        notes.append("Brain in DEFEND — capital protection active")
+    if brain_mode == "DEFEND":
+        notes.append("Brain DEFEND (tight params) + Governor TRADE (entries allowed)")
     if dd_pct < -5:
         notes.append(f"Drawdown {dd_pct:.1f}% — monitor closely")
 
@@ -141,6 +149,15 @@ def read_sfmbot() -> SleeveState:
     # sfm_state.json has no equity_peak, so this is baseline-anchored, not peak-anchored.
     dd_pct = min(0.0, (equity - SFMBOT_BASELINE) / SFMBOT_BASELINE * 100) if SFMBOT_BASELINE > 0 else 0.0
 
+    _sfm_mode = "PAPER"
+    try:
+        _sfm_env_path = os.path.join(r"C:\Projects\sfmbot", ".env")
+        if os.path.exists(_sfm_env_path):
+            for _l in open(_sfm_env_path):
+                if _l.strip().startswith("TRADE_MODE="):
+                    _sfm_mode = _l.strip().split("=",1)[1].strip().strip('"').strip("'")
+    except Exception:
+        pass
     return SleeveState(
         name="sfm_tactical",
         equity_usd=equity,
@@ -149,7 +166,7 @@ def read_sfmbot() -> SleeveState:
         pnl_pct=pnl_pct,
         drawdown_pct=dd_pct,
         open_positions=open_ct,
-        mode="PAPER",
+        mode=_sfm_mode,
         cycle=cycle,
         health=_health(pnl_pct, dd_pct),
         notes=notes,
@@ -164,7 +181,7 @@ def read_alpacabot() -> SleeveState:
     open_ct = 0
     try:
         from alpaca.trading.client import TradingClient
-        client = TradingClient(ALPACA_API_KEY, ALPACA_SECRET_KEY, paper=True)
+        client = TradingClient(ALPACA_API_KEY, ALPACA_SECRET_KEY, paper=ALPACA_API_KEY.startswith("PK"))
         account   = client.get_account()
         positions = client.get_all_positions()
         equity  = float(account.equity)
@@ -195,7 +212,7 @@ def read_alpacabot() -> SleeveState:
         pnl_pct=pnl_pct,
         drawdown_pct=dd_pct,
         open_positions=open_ct,
-        mode="PAPER",
+        mode="PAPER" if ALPACA_API_KEY.startswith("PK") else "LIVE",
         cycle=cycle,
         health=_health(pnl_pct, dd_pct),
         notes=notes,

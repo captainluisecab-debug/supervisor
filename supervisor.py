@@ -146,7 +146,7 @@ def _run_cycle(cycle: int, peak_equity: float, anomaly_detector: AnomalyDetector
         regime.btc_7d_pct, regime.spy_vol_10d,
     )
 
-    # 3. Morning pre-market brief — once per weekday at 9 AM ET
+    # 3. Pre-market brief (8:02 AM + 8:02 PM ET) + trigger strategic review
     if should_fire():
         from supervisor_news import fetch_news
         from supervisor_social import fetch_social
@@ -160,6 +160,16 @@ def _run_cycle(cycle: int, peak_equity: float, anomaly_detector: AnomalyDetector
         fire_morning_brief(portfolio, regime, allocations, recent_outcomes,
                            sentiment=sentiment, correlation=correlation,
                            news=news, calendar=calendar, social=social)
+        try:
+            from opus_strategic_review import run_strategic_review
+            _directive = run_strategic_review()
+            if _directive:
+                log.info("[BRIEF] Strategic directive updated: K=%s S=%s A=%s",
+                         _directive.get("kraken_directive",{}).get("posture","?"),
+                         _directive.get("sfm_directive",{}).get("posture","?"),
+                         _directive.get("alpaca_directive",{}).get("posture","?"))
+        except Exception as _exc:
+            log.warning("[BRIEF] Strategic review failed: %s", _exc)
 
     # 4. Hermes context layer — runs every cycle, $0, replaces Brain
     _regime_label = regime.regime if regime else "NEUTRAL"

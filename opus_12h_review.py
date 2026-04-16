@@ -658,9 +658,9 @@ def main():
     hermes_escalations = read_and_clear_escalations()
 
     prompt = build_prompt(brief, decisions, outcomes, prev_pnl, current_pnl, review_memory, paperclip_state, hermes_escalations)
-    print(f"[OPUS 12H REVIEW] Prompt built ({len(prompt)} chars). Writing packet for manual Opus review...")
+    print(f"[OPUS 12H REVIEW] Prompt built ({len(prompt)} chars). Writing packet...")
 
-    # Write packet file for operator/Opus review — no API call
+    # Write packet file for operator reference
     packet_file = os.path.join(BASE_DIR, "opus_review_packet.md")
     try:
         with open(packet_file, "w", encoding="utf-8") as _pf:
@@ -670,8 +670,22 @@ def main():
     except Exception as exc:
         print(f"[OPUS 12H REVIEW] WARNING: could not write packet: {exc}")
 
-    response = f"[PACKET_WRITTEN] Review packet written to {packet_file} at {ts}. Awaiting manual Opus review."
-    print(f"[OPUS 12H REVIEW] Packet ready ({len(prompt)} chars)")
+    # Run strategic review — Opus analyzes outcomes and writes directive for Governor
+    print("[OPUS 12H REVIEW] Running strategic review...")
+    try:
+        from opus_strategic_review import run_strategic_review
+        directive = run_strategic_review()
+        if directive:
+            response = f"Strategic directive written. Assessment: {directive.get('universe_assessment', 'N/A')[:100]}"
+            print(f"[OPUS 12H REVIEW] Strategic review COMPLETE: {response}")
+        else:
+            response = "Strategic review returned empty (no API key or error)"
+            print(f"[OPUS 12H REVIEW] {response}")
+    except Exception as exc:
+        response = f"Strategic review failed: {exc}"
+        print(f"[OPUS 12H REVIEW] {response}")
+
+    print(f"[OPUS 12H REVIEW] Done ({len(prompt)} chars prompt)")
 
     # Log the review event
     log_fix({
