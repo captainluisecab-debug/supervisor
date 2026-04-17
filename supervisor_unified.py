@@ -4,7 +4,7 @@ Called every brain cycle to give the master brain full cross-bot visibility.
 
 State file paths (from supervisor_settings.py):
   enzobot:   C:\\Projects\\enzobot\\state.json  + brain_state.json
-  sfmbot:    C:\\Projects\\sfmbot\\sfm_state.json
+  sfmbot:    C:\\Projects\\sfmbot\\solana_state.json
   alpacabot: C:\\Projects\\alpacabot\\alpaca_state.json
 """
 from __future__ import annotations
@@ -26,7 +26,7 @@ _BASE_ALPACA   = r"C:\Projects\alpacabot"
 
 ENZOBOT_STATE_PATH  = os.environ.get("ENZOBOT_STATE",  os.path.join(_BASE_ENZOBOT, "state.json"))
 ENZOBOT_BRAIN_PATH  = os.environ.get("ENZOBOT_BRAIN",  os.path.join(_BASE_ENZOBOT, "brain_state.json"))
-SFMBOT_STATE_PATH   = os.environ.get("SFMBOT_STATE",   os.path.join(_BASE_SFM,     "sfm_state.json"))
+SFMBOT_STATE_PATH   = os.environ.get("SFMBOT_STATE",   os.path.join(_BASE_SFM,     "solana_state.json"))
 ALPACA_STATE_PATH   = os.environ.get("ALPACA_STATE",   os.path.join(_BASE_ALPACA,  "alpaca_state.json"))
 
 # Capital baselines (mirrors supervisor_settings.py defaults)
@@ -167,10 +167,10 @@ def _read_enzobot() -> BotSnapshot:
 
 def _read_sfmbot() -> BotSnapshot:
     """
-    sfm_state.json structure:
+    solana_state.json structure (multi-pair):
       usdc_balance, realized_pnl_usd, total_trades, winning_trades,
-      losing_trades, cycle, last_buy_candle_idx,
-      position: {entry_price, sfm_qty, cost_usd, entry_ts, scaled_out} | null
+      losing_trades, cycle, peak_equity,
+      positions: {pair_name: {pair, base_qty, entry_price, cost_usd, ...}}
     """
     state, age = _load_json(SFMBOT_STATE_PATH)
 
@@ -184,27 +184,30 @@ def _read_sfmbot() -> BotSnapshot:
 
     usdc     = float(state.get("usdc_balance", _SFMBOT_BASELINE))
     rpnl     = float(state.get("realized_pnl_usd", 0.0))
-    pos      = state.get("position")
+    raw_pos  = state.get("positions") or {}
 
     positions_out = []
     deployed = 0.0
 
-    if pos and isinstance(pos, dict):
-        cost_usd    = float(pos.get("cost_usd",    0.0))
-        entry_price = float(pos.get("entry_price", 0.0))
-        sfm_qty     = float(pos.get("sfm_qty",     0.0))
-        deployed    = cost_usd
-        # SFM current price not in state — mark at cost (no unrealized P&L available)
-        positions_out.append({
-            "symbol":        "SFM",
-            "entry_price":   entry_price,
-            "current_value": cost_usd,   # marked at cost; no live price in state
-            "pnl_pct":       0.0,
-            "bot":           "sfmbot",
-        })
+    if isinstance(raw_pos, dict):
+        for pair_name, pos in raw_pos.items():
+            if not isinstance(pos, dict):
+                continue
+            cost_usd    = float(pos.get("cost_usd", 0.0))
+            entry_price = float(pos.get("entry_price", 0.0))
+            if cost_usd <= 0:
+                continue
+            deployed += cost_usd
+            positions_out.append({
+                "symbol":        pair_name,
+                "entry_price":   entry_price,
+                "current_value": cost_usd,
+                "pnl_pct":       0.0,
+                "bot":           "sfmbot",
+            })
 
     equity = usdc + deployed
-    # Drawdown proxy: equity vs baseline (no equity_peak in sfm_state.json).
+    # Drawdown proxy: equity vs baseline (no equity_peak in solana_state.json).
     dd_pct = min(0.0, (equity - _SFMBOT_BASELINE) / _SFMBOT_BASELINE * 100) if _SFMBOT_BASELINE > 0 else 0.0
 
     total_trades   = int(state.get("total_trades",   0))

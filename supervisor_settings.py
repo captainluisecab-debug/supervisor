@@ -36,7 +36,7 @@ BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 # Bot state paths
 ENZOBOT_STATE  = _s("ENZOBOT_STATE",  r"C:\Projects\enzobot\state.json")
 ENZOBOT_BRAIN  = _s("ENZOBOT_BRAIN",  r"C:\Projects\enzobot\brain_state.json")
-SFMBOT_STATE   = _s("SFMBOT_STATE",   r"C:\Projects\sfmbot\sfm_state.json")
+SFMBOT_STATE   = _s("SFMBOT_STATE",   r"C:\Projects\sfmbot\solana_state.json")
 ALPACA_STATE   = _s("ALPACA_STATE",   r"C:\Projects\alpacabot\alpaca_state.json")
 
 # Alpaca live account

@@ -393,7 +393,7 @@ def _read_enzobot_state() -> dict:
 
 def _read_sfm_state() -> dict:
     feedback = _read_json(os.path.join(SFMBOT_DIR, "sfm_supervisor_feedback.json"))
-    state = _read_json(os.path.join(SFMBOT_DIR, "sfm_state.json"))
+    state = _read_json(os.path.join(SFMBOT_DIR, "solana_state.json"))
     return {
         "sleeve": "sfm",
         "equity": feedback.get("equity", 0),

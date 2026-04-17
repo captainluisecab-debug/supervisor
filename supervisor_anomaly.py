@@ -109,7 +109,7 @@ class AnomalyDetector:
         return self._read_json(os.path.join(ENZOBOT_DIR, "policy.json"))
 
     def _sfm_state(self) -> dict:
-        return self._read_json(os.path.join(SFMBOT_DIR, "sfm_state.json"))
+        return self._read_json(os.path.join(SFMBOT_DIR, "solana_state.json"))
 
     def _alpaca_state(self) -> dict:
         return self._read_json(os.path.join(ALPACA_DIR, "alpaca_state.json"))

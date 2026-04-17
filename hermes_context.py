@@ -289,12 +289,19 @@ def _read_kraken() -> dict:
 
 def _read_sfm() -> dict:
     feedback = _read_json(os.path.join(SFMBOT_DIR, "sfm_supervisor_feedback.json"))
-    state = _read_json(os.path.join(SFMBOT_DIR, "sfm_state.json"))
+    state = _read_json(os.path.join(SFMBOT_DIR, "solana_state.json"))
+    # Multi-pair state: equity = usdc + sum of position costs
+    usdc = float(state.get("usdc_balance", 0))
+    positions = state.get("positions", {})
+    deployed = sum(float(p.get("cost_usd", 0)) for p in positions.values() if isinstance(p, dict))
+    equity = usdc + deployed if (usdc + deployed) > 0 else feedback.get("equity", 0)
+    from supervisor_settings import SFMBOT_BASELINE
+    dd_pct = min(0.0, (equity - SFMBOT_BASELINE) / SFMBOT_BASELINE * 100) if SFMBOT_BASELINE > 0 else 0
     return {
         "sleeve": "sfm",
-        "equity": feedback.get("equity", 0),
-        "dd_pct": feedback.get("dd_pct", 0),
-        "open_position": feedback.get("open_position", False),
+        "equity": equity,
+        "dd_pct": dd_pct,
+        "open_position": len(positions) > 0,
         "realized_pnl": state.get("realized_pnl_usd", 0),
         "total_trades": state.get("total_trades", 0),
         "winning_trades": state.get("winning_trades", 0),
@@ -519,7 +526,7 @@ def build_context(regime_label: str, regime_confidence: float) -> dict:
     blocked = _read_jsonl_tail(os.path.join(ENZOBOT_DIR, "logs", "blocked_candidates.jsonl"), 20)
 
     # SFM trade state
-    sfm_state_full = _read_json(os.path.join(SFMBOT_DIR, "sfm_state.json"))
+    sfm_state_full = _read_json(os.path.join(SFMBOT_DIR, "solana_state.json"))
 
     # Alpaca trade state
     alpaca_state_full = _read_json(os.path.join(ALPACA_DIR, "alpaca_state.json"))
