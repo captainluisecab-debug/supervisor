@@ -136,8 +136,8 @@ def gather_universe_context() -> dict:
                 "recommended_blocks": alpaca_outcomes.get("recommended_blocks", []),
             },
         },
-        "recent_brain_reviews": brain_reviews[-5:],
-        "recent_trades": exec_log[-15:],
+        "recent_brain_reviews": brain_reviews[-3:],
+        "recent_trades": exec_log[-10:],
         "hermes_insights": hermes.get("hermes_insights", []),
     }
     return context
@@ -233,7 +233,7 @@ Respond ONLY with valid JSON in this format:
         client = anthropic.Anthropic(api_key=api_key)
         resp = client.messages.create(
             model="claude-sonnet-4-6",
-            max_tokens=1000,
+            max_tokens=4096,
             messages=[{"role": "user", "content": prompt}],
         )
         text = resp.content[0].text.strip()
