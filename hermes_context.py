@@ -292,9 +292,10 @@ def _read_sfm() -> dict:
     state = _read_json(os.path.join(SFMBOT_DIR, "solana_state.json"))
     # Multi-pair state: equity = usdc + sum of position costs
     usdc = float(state.get("usdc_balance", 0))
+    sol_usd = float(state.get("sol_usd", 0))
     positions = state.get("positions", {})
     deployed = sum(float(p.get("cost_usd", 0)) for p in positions.values() if isinstance(p, dict))
-    equity = usdc + deployed if (usdc + deployed) > 0 else feedback.get("equity", 0)
+    equity = usdc + sol_usd + deployed if (usdc + sol_usd + deployed) > 0 else feedback.get("equity", 0)
     from supervisor_settings import SFMBOT_BASELINE
     dd_pct = min(0.0, (equity - SFMBOT_BASELINE) / SFMBOT_BASELINE * 100) if SFMBOT_BASELINE > 0 else 0
     return {

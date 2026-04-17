@@ -130,9 +130,10 @@ def read_sfmbot() -> SleeveState:
                            ["State file not found — bot may not have run yet"])
 
     usdc    = float(state.get("usdc_balance", 0))
+    sol_usd = float(state.get("sol_usd", 0))
     positions = state.get("positions", {})
     deployed = sum(float(p.get("cost_usd", 0)) for p in positions.values() if isinstance(p, dict))
-    equity  = usdc + deployed if (usdc + deployed) > 0 else SFMBOT_BASELINE
+    equity  = usdc + sol_usd + deployed if (usdc + sol_usd + deployed) > 0 else SFMBOT_BASELINE
     rpnl    = float(state.get("realized_pnl_usd", 0))
     pnl_usd = equity - SFMBOT_BASELINE
     pnl_pct = pnl_usd / SFMBOT_BASELINE * 100 if SFMBOT_BASELINE > 0 else 0

@@ -182,7 +182,8 @@ def _read_sfmbot() -> BotSnapshot:
             state_age_sec=-1.0, ok=False,
         )
 
-    usdc     = float(state.get("usdc_balance", _SFMBOT_BASELINE))
+    usdc     = float(state.get("usdc_balance", 0))
+    sol_usd  = float(state.get("sol_usd", 0))
     rpnl     = float(state.get("realized_pnl_usd", 0.0))
     raw_pos  = state.get("positions") or {}
 
@@ -206,8 +207,8 @@ def _read_sfmbot() -> BotSnapshot:
                 "bot":           "sfmbot",
             })
 
-    equity = usdc + deployed
-    # Drawdown proxy: equity vs baseline (no equity_peak in solana_state.json).
+    equity = usdc + sol_usd + deployed
+    # Drawdown proxy: equity vs baseline.
     dd_pct = min(0.0, (equity - _SFMBOT_BASELINE) / _SFMBOT_BASELINE * 100) if _SFMBOT_BASELINE > 0 else 0.0
 
     total_trades   = int(state.get("total_trades",   0))
