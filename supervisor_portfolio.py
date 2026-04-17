@@ -129,21 +129,20 @@ def read_sfmbot() -> SleeveState:
                            0, 0, 0, 0, "UNKNOWN", 0, "GOOD",
                            ["State file not found — bot may not have run yet"])
 
-    usdc    = float(state.get("usdc_balance", SFMBOT_BASELINE))
-    pos     = state.get("position")
-    # SFM position value is not tracked in USD in state — use cost as proxy
-    pos_val = float(pos.get("cost_usd", 0)) if pos else 0.0
-    equity  = usdc + pos_val
+    usdc    = float(state.get("usdc_balance", 0))
+    positions = state.get("positions", {})
+    deployed = sum(float(p.get("cost_usd", 0)) for p in positions.values() if isinstance(p, dict))
+    equity  = usdc + deployed if (usdc + deployed) > 0 else SFMBOT_BASELINE
     rpnl    = float(state.get("realized_pnl_usd", 0))
-    pnl_usd = rpnl  # realized only (unrealized not tracked in state)
-    pnl_pct = pnl_usd / SFMBOT_BASELINE * 100
+    pnl_usd = equity - SFMBOT_BASELINE
+    pnl_pct = pnl_usd / SFMBOT_BASELINE * 100 if SFMBOT_BASELINE > 0 else 0
     cycle   = int(state.get("cycle", 0))
-    open_ct = 1 if pos else 0
+    open_ct = len(positions)
 
     notes = []
-    if open_ct:
-        notes.append(f"Open SFM position: {pos.get('sfm_qty',0):,.0f} tokens")
-    notes.append("Liquidity: $40k — max $100 per trade")
+    for pair_name, pos in positions.items():
+        if isinstance(pos, dict):
+            notes.append(f"{pair_name}: ${float(pos.get('cost_usd',0)):.0f}")
 
     # Drawdown proxy: how far equity is below baseline.
     # sfm_state.json has no equity_peak, so this is baseline-anchored, not peak-anchored.
