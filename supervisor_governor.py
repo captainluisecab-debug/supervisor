@@ -517,6 +517,12 @@ def _write_command_file(path: str, mode: str, size_mult: float,
         "ts": datetime.now(timezone.utc).isoformat(),
         "source": "governor",
     }
+    # Include dominant regime for dynamic exit floor
+    try:
+        _truth = _read_json(os.path.join(BASE_DIR, "kraken_state_truth.json"))
+        cmd["dominant_regime"] = _truth.get("regime", {}).get("dominant", "RANGING")
+    except Exception:
+        pass
     if trend_phase:
         cmd["trend_phase"] = trend_phase
         cmd["trend_phase_hours"] = round(trend_phase_hours, 1)
