@@ -25,10 +25,10 @@
 
 | Sleeve | Equity | PnL | Positions | Mode |
 |---|---|---|---|---|
-| Kraken | ~$1,085 | -$4.30 | 1 (BTC dust) | DEFEND\|BLOCK |
+| Kraken | ~$1,659 | -$29.55 (-1.75%) | 1 (BTC dust) | DEFEND\|BLOCK |
 | SFM/Solana | ~$1,831 | rpnl +$143.05 | 0 flat | LIVE |
 | Alpaca | $535 | +$35.00 | 1 (QQQ or SPY) | LIVE (sleeping — weekend) |
-| **TOTAL** | **~$3,451** | | | |
+| **TOTAL** | **~$4,158** | | | |
 
 **Regime:** RISK_ON (100% conf) but TRENDING_DOWN on crypto — Kraken FORCE_FLAT active.
 **Kill switch:** OFF. **Kernel:** PASS. **DD:** ~-6%.
@@ -61,9 +61,12 @@
 - **Supervisor fully synced** to solana_state.json (was reading old sfm_state.json)
 
 ### Baselines (current)
-- Kraken: $1,089.00
+- Kraken: $1,689.00 (was $1,089.00; +$600 operator deposit 2026-04-19)
 - SFM/Solana: $1,846.70
 - Alpaca: $500.00
+
+### Deploy config
+- Kraken `TARGET_DEPLOY_PCT`: 0.37 (was 0.60; lowered on +$600 deposit to keep per-position sizing at validated ~$125 live-era level until S1 exit-gate fix proves out)
 
 ---
 
