@@ -835,9 +835,22 @@ def evaluate_kraken(enzo_state: dict, exits: List[dict], cycle: int,
         ))
 
     if hours_since_win > NO_WIN_ALERT_HOURS and exits and open_pos > 0:
+        # Build entry-status string that matches what will actually be written
+        # to commands/kraken_cmd.json this cycle. ALERT must never claim
+        # "entries allowed" while the command file says entry_allowed=false.
+        if regime_mode == "FLAT":
+            _entry_status = f"entries blocked: regime={dominant} FLAT"
+        elif regime_mode == "REDUCE":
+            _entry_status = f"entries blocked: regime={dominant} REDUCE"
+        elif expectancy < EXPECTANCY_FREEZE_THRESHOLD:
+            _entry_status = f"entries blocked: expectancy={expectancy:.2f} < {EXPECTANCY_FREEZE_THRESHOLD}"
+        elif not _hermes_entry:
+            _entry_status = f"entries blocked: Hermes DD override (DD={dd:.1f}%)"
+        else:
+            _entry_status = "entries still allowed"
         decisions.append(GovernorDecision(
             ts=now_iso, cycle=cycle, action="ALERT", sleeve="kraken",
-            reason=f"No profitable exit in {hours_since_win:.0f} hours — monitoring (entries still allowed)",
+            reason=f"No profitable exit in {hours_since_win:.0f} hours — monitoring ({_entry_status})",
             shadow=SHADOW_MODE, metrics=metrics,
         ))
         # LESSON-008: Do NOT freeze entries here — creates deadlock.
