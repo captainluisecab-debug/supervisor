@@ -62,7 +62,7 @@
 
 ### Baselines (current)
 - Kraken: $3,545.78 (was $1,689.00; operator recapitalization 2026-04-21 to professional-grade working capital)
-- SFM/Solana: $1,846.70
+- SFM/Solana: $6.41 (was $1,846.70; operator bridged ~$1,369 to Kraken + manual swaps; remaining bot-tracked capital only — existing 20.3M SFM tokens in wallet are operator-managed, not bot-tracked)
 - Alpaca: $500.00
 
 ### Deploy config
