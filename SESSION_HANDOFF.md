@@ -25,10 +25,10 @@
 
 | Sleeve | Equity | PnL | Positions | Mode |
 |---|---|---|---|---|
-| Kraken | ~$1,659 | -$29.55 (-1.75%) | 1 (BTC dust) | DEFEND\|BLOCK |
+| Kraken | ~$3,546 | on new baseline | varies | CAUTIOUS early-phase (post recapitalization) |
 | SFM/Solana | ~$1,831 | rpnl +$143.05 | 0 flat | LIVE |
 | Alpaca | $535 | +$35.00 | 1 (QQQ or SPY) | LIVE (sleeping — weekend) |
-| **TOTAL** | **~$4,158** | | | |
+| **TOTAL** | **~$6,012** | | | |
 
 **Regime:** RISK_ON (100% conf) but TRENDING_DOWN on crypto — Kraken FORCE_FLAT active.
 **Kill switch:** OFF. **Kernel:** PASS. **DD:** ~-6%.
@@ -61,12 +61,12 @@
 - **Supervisor fully synced** to solana_state.json (was reading old sfm_state.json)
 
 ### Baselines (current)
-- Kraken: $1,689.00 (was $1,089.00; +$600 operator deposit 2026-04-19)
+- Kraken: $3,545.78 (was $1,689.00; operator recapitalization 2026-04-21 to professional-grade working capital)
 - SFM/Solana: $1,846.70
 - Alpaca: $500.00
 
 ### Deploy config
-- Kraken `TARGET_DEPLOY_PCT`: 0.37 (was 0.60; lowered on +$600 deposit to keep per-position sizing at validated ~$125 live-era level until S1 exit-gate fix proves out)
+- Kraken `TARGET_DEPLOY_PCT`: 0.37 (held constant from $600-deposit era; at $3,545.78 capital this targets $1,312 deployed / 5 positions = ~$262 per position — professional-but-disciplined sizing; preserves all Compounder, S1, K1, K2, K3, DUST-FILTER, ENTRY-CONFIRM, RECONCILE protections)
 
 ---
 
