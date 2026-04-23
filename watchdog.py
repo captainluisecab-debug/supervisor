@@ -16,6 +16,7 @@ RESTART_DELAY = 5
 PROCESSES = [
     {"name": "supervisor",    "script": "supervisor.py",    "proc": None, "restarts": 0},
     {"name": "opus_sentinel", "script": "opus_sentinel.py", "proc": None, "restarts": 0},
+    {"name": "opus_review",   "script": "opus_review.py",   "proc": None, "restarts": 0},
 ]
 
 
