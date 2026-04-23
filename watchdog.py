@@ -1,5 +1,5 @@
 """
-watchdog.py — Keeps supervisor.py alive.
+watchdog.py — Keeps supervisor.py and opus_sentinel.py alive.
 Usage: python watchdog.py
 """
 from __future__ import annotations
@@ -13,7 +13,10 @@ BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 PYTHON   = sys.executable
 CHECK_SEC = 30
 RESTART_DELAY = 5
-PROCESS = {"name": "supervisor", "script": "supervisor.py", "proc": None, "restarts": 0}
+PROCESSES = [
+    {"name": "supervisor",    "script": "supervisor.py",    "proc": None, "restarts": 0},
+    {"name": "opus_sentinel", "script": "opus_sentinel.py", "proc": None, "restarts": 0},
+]
 
 
 def start(entry):
@@ -27,18 +30,20 @@ def start(entry):
 
 def main():
     log.info("=" * 50)
-    log.info("SUPERVISOR WATCHDOG")
+    log.info("SUPERVISOR WATCHDOG — %d processes managed", len(PROCESSES))
     log.info("=" * 50)
-    start(PROCESS)
+    for entry in PROCESSES:
+        start(entry)
     while True:
         time.sleep(CHECK_SEC)
-        proc = PROCESS["proc"]
-        if proc is None or proc.poll() is not None:
-            PROCESS["restarts"] += 1
-            log.warning("supervisor crashed — restarting in %ds (restart #%d)",
-                        RESTART_DELAY, PROCESS["restarts"])
-            time.sleep(RESTART_DELAY)
-            start(PROCESS)
+        for entry in PROCESSES:
+            proc = entry["proc"]
+            if proc is None or proc.poll() is not None:
+                entry["restarts"] += 1
+                log.warning("%s crashed — restarting in %ds (restart #%d)",
+                            entry["name"], RESTART_DELAY, entry["restarts"])
+                time.sleep(RESTART_DELAY)
+                start(entry)
 
 
 if __name__ == "__main__":
@@ -46,5 +51,6 @@ if __name__ == "__main__":
         main()
     except KeyboardInterrupt:
         log.info("Watchdog stopped.")
-        if PROCESS["proc"] and PROCESS["proc"].poll() is None:
-            PROCESS["proc"].terminate()
+        for entry in PROCESSES:
+            if entry["proc"] and entry["proc"].poll() is None:
+                entry["proc"].terminate()
