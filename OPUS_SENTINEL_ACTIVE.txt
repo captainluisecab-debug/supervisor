@@ -1,0 +1,19 @@
+Opus Sentinel active-mode flag.
+
+Presence of this file (combined with absence of OPUS_SENTINEL_PAUSE.txt)
+activates write-mode for the sentinel.
+
+Write authority granted when active:
+  - issues.jsonl: append new auto-detected issue records with
+    source="opus_sentinel", auto_filed=true.
+
+Write authority NOT granted (even in active mode):
+  - supervisor_override.json (Brain owns this)
+  - cmd files (Governor owns these)
+  - state files (Engine owns these)
+  - exchange orders (Engine owns these)
+
+To pause the sentinel without full shutdown:
+  New-Item C:/Projects/supervisor/OPUS_SENTINEL_PAUSE.txt
+
+Activated: 2026-04-23 (operator direction: "IT MUST ACT")

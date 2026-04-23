@@ -211,6 +211,88 @@ TRIGGERS = [
 # Main cycle
 # ──────────────────────────────────────────────────────────────────────
 
+def _next_issue_id() -> str:
+    """Generate next ISSUE-NNN id by reading existing issues.jsonl."""
+    try:
+        with open(ISSUES_FILE, encoding="utf-8") as f:
+            lines = [ln for ln in f if ln.strip()]
+        max_n = 0
+        for ln in lines:
+            try:
+                iid = json.loads(ln).get("issue_id", "")
+                if iid.startswith("ISSUE-"):
+                    n = int(iid.split("-")[1])
+                    if n > max_n:
+                        max_n = n
+            except Exception:
+                continue
+        return f"ISSUE-{max_n + 1:03d}"
+    except Exception:
+        return f"ISSUE-SENTINEL-{int(time.time())}"
+
+
+# Trigger → issue template. Each trigger has a severity and reopen criteria
+# so issues.jsonl records are consistent and auditable.
+ISSUE_TEMPLATES = {
+    "B1_kernel_halt_persistent": {
+        "anomaly_type": "KERNEL_HALT_PERSISTENT",
+        "severity": "HIGH",
+        "reopen_criteria": [
+            "Kernel HALT for 3+ consecutive cycles on the same invariant "
+            "violation (indicates root cause not resolved by kernel skip alone)"
+        ],
+    },
+    "B5_brain_daily_loss": {
+        "anomaly_type": "BRAIN_DAILY_LOSS_DEFEND",
+        "severity": "MEDIUM",
+        "reopen_criteria": [
+            "Brain triggers daily_loss DEFEND more than 2x in same calendar day"
+        ],
+    },
+    "B8_stale_cmd": {
+        "anomaly_type": "SUPERVISOR_CMD_STALE",
+        "severity": "HIGH",
+        "reopen_criteria": [
+            "Any sleeve cmd file >10 min without refresh (governor skipped "
+            "or supervisor process issue)"
+        ],
+    },
+}
+
+
+def _file_issue(trigger_key: str, trigger_result: dict) -> Optional[str]:
+    """Append a structured issue to issues.jsonl. Returns issue_id or None."""
+    template = ISSUE_TEMPLATES.get(trigger_key, {})
+    iid = _next_issue_id()
+    issue = {
+        "issue_id": iid,
+        "anomaly_type": template.get("anomaly_type", "SENTINEL_UNCLASSIFIED"),
+        "opened_at": _now_iso(),
+        "classification": "open",
+        "issue_state": "auto_detected",
+        "owner": "opus_sentinel",
+        "source": "opus_sentinel",
+        "auto_filed": True,
+        "severity": template.get("severity", "MEDIUM"),
+        "trigger": trigger_key,
+        "evidence_summary": trigger_result.get("rationale", ""),
+        "evidence_detail": trigger_result.get("detail", {}),
+        "proposed_action": trigger_result.get("proposed_action", ""),
+        "reopen_criteria": template.get("reopen_criteria", []),
+        "reopen_criteria_matched": [],
+        "validation_status": "pending_operator_review",
+        "closed_at": None,
+    }
+    try:
+        with open(ISSUES_FILE, "a", encoding="utf-8") as f:
+            f.write(json.dumps(issue) + "\n")
+        log.info("ISSUE FILED: %s (%s)", iid, trigger_key)
+        return iid
+    except Exception as exc:
+        log.error("issue file failed: %s", exc)
+        return None
+
+
 def run_cycle() -> None:
     """One sentinel cycle. Runs every CHECK_INTERVAL_SEC."""
     active = _is_active_mode()
@@ -230,19 +312,22 @@ def run_cycle() -> None:
             "proposed_action": result["proposed_action"],
             "rationale": result["rationale"],
             "active_mode": active,
-            "action_taken": None,  # populated below
+            "action_taken": None,
+            "issue_id": None,
         }
-        # Shadow mode: log only
         if not active:
             entry["action_taken"] = "NONE (shadow mode)"
             log.info("TRIGGER [SHADOW] %s: %s",
                      result["trigger"], result["rationale"])
         else:
-            # Active mode: for MVP, still log-only. Real write logic lands
-            # after shadow validation per operator approval.
-            entry["action_taken"] = "NONE (active-mode writes not yet enabled)"
-            log.warning("TRIGGER [ACTIVE] %s: %s — WRITE PATHS NOT YET WIRED",
-                        result["trigger"], result["rationale"])
+            # Active mode: file an issue. Issue filing is the ONLY write
+            # sentinel performs. No param changes, no cmd writes, no
+            # exchange calls. Escalation channel only.
+            iid = _file_issue(result["trigger"], result)
+            entry["issue_id"] = iid
+            entry["action_taken"] = f"ISSUE_FILED: {iid}" if iid else "ISSUE_FILE_FAILED"
+            log.warning("TRIGGER [ACTIVE] %s filed %s: %s",
+                        result["trigger"], iid, result["rationale"])
         _write_audit(entry)
     if fired_count == 0:
         log.info("cycle clean — no triggers")
