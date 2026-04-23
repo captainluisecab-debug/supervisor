@@ -47,6 +47,9 @@ ENZOBOT_BRAIN_DECISIONS = os.path.join(ENZOBOT_DIR, "brain_decisions.jsonl")
 ENZOBOT_EXIT_LOG = os.path.join(ENZOBOT_DIR, "logs", "exit_counterfactuals.jsonl")
 ENZOBOT_SERVICE_LOG = os.path.join(ENZOBOT_DIR, "logs", "service.log")
 ENZOBOT_STATE = os.path.join(ENZOBOT_DIR, "state.json")
+ENZOBOT_FEEDBACK = os.path.join(ENZOBOT_DIR, "supervisor_feedback.json")
+ENZOBOT_POLICY = os.path.join(ENZOBOT_DIR, "policy.json")
+ENZOBOT_SENTINEL_OVERRIDE = os.path.join(ENZOBOT_DIR, "sentinel_override.json")
 
 # Output files
 AUDIT_FILE = os.path.join(BASE_DIR, "opus_sentinel_audit.jsonl")
@@ -673,6 +676,61 @@ ISSUE_TEMPLATES = {
 }
 
 
+def _write_sentinel_override(changes: dict, reason: str, ttl_sec: int = 7200,
+                              blocked_pairs: Optional[list] = None) -> bool:
+    """Write sentinel_override.json at enzobot side. Engine layers this on
+    top of Brain's supervisor_override.json (sentinel wins when both fire).
+    TTL ensures the override self-expires if sentinel stops writing.
+
+    changes: dict of {POLICY_KEY: new_value}. Validated against policy
+             hard_bounds before write. Out-of-bounds entries are dropped.
+    reason:  human-readable reason string.
+    ttl_sec: seconds from now until override expires.
+    blocked_pairs: optional list of pair names to add to blocked_pairs.
+    Returns True if a write happened, False if nothing applicable.
+    """
+    # Load policy bounds for validation — same bounds brain uses
+    policy = _read_json(ENZOBOT_POLICY)
+    bounds = policy.get("hard_bounds", {})
+
+    validated = {}
+    for k, v in (changes or {}).items():
+        if k not in bounds:
+            log.warning("sentinel override skipped %s=%s (not in hard_bounds)", k, v)
+            continue
+        try:
+            lo, hi = bounds[k]
+            clamped = max(lo, min(hi, v))
+            validated[k] = clamped
+            if clamped != v:
+                log.info("sentinel override clamped %s: %s -> %s (bounds %s)",
+                         k, v, clamped, bounds[k])
+        except Exception as exc:
+            log.warning("sentinel override skipped %s: bounds err %s", k, exc)
+
+    if not validated and not blocked_pairs:
+        return False
+
+    payload = {
+        "ts": _now_iso(),
+        "ttl_expiry": datetime.fromtimestamp(time.time() + ttl_sec, timezone.utc).isoformat(),
+        "reason": reason,
+        "source": "opus_sentinel",
+        "changes": validated,
+        "blocked_pairs": sorted(set(blocked_pairs or [])),
+    }
+    try:
+        tmp = ENZOBOT_SENTINEL_OVERRIDE + ".tmp"
+        with open(tmp, "w", encoding="utf-8") as f:
+            json.dump(payload, f, indent=2)
+        os.replace(tmp, ENZOBOT_SENTINEL_OVERRIDE)
+        log.warning("SENTINEL_OVERRIDE WRITTEN: %s (ttl %ds)", validated or blocked_pairs, ttl_sec)
+        return True
+    except Exception as exc:
+        log.error("sentinel override write failed: %s", exc)
+        return False
+
+
 def _file_issue(trigger_key: str, trigger_result: dict) -> Optional[str]:
     """Append a structured issue to issues.jsonl. Returns issue_id or None."""
     template = ISSUE_TEMPLATES.get(trigger_key, {})
@@ -733,14 +791,48 @@ def run_cycle() -> None:
             log.info("TRIGGER [SHADOW] %s: %s",
                      result["trigger"], result["rationale"])
         else:
-            # Active mode: file an issue. Issue filing is the ONLY write
-            # sentinel performs. No param changes, no cmd writes, no
-            # exchange calls. Escalation channel only.
+            # Active mode: file an issue (escalation trail), AND for a
+            # narrow set of triggers where the remediation is safe and
+            # within policy.json hard_bounds, write a sentinel_override
+            # that engine layers on top of brain's override. 2h TTL.
+            # All other triggers stay escalation-only.
             iid = _file_issue(result["trigger"], result)
             entry["issue_id"] = iid
-            entry["action_taken"] = f"ISSUE_FILED: {iid}" if iid else "ISSUE_FILE_FAILED"
-            log.warning("TRIGGER [ACTIVE] %s filed %s: %s",
-                        result["trigger"], iid, result["rationale"])
+            override_applied = False
+
+            trigger_key = result["trigger"]
+            if trigger_key == "B2_expectancy_below_floor":
+                # Reduce deployment to cap blast radius while expectancy is bad
+                override_applied = _write_sentinel_override(
+                    changes={"TARGET_DEPLOY_PCT": 0.25},
+                    reason=f"B2 autonomous: expectancy {result['detail'].get('expectancy')} below floor",
+                    ttl_sec=7200,
+                )
+            elif trigger_key == "B4_same_pair_churn":
+                # Block the churning pair + raise global cooldown
+                bad_pair = result["detail"].get("pair")
+                override_applied = _write_sentinel_override(
+                    changes={"COOLDOWN_SEC": 5400},  # within [300, 7200]
+                    reason=f"B4 autonomous: {bad_pair} churn, block + cooldown up",
+                    ttl_sec=21600,
+                    blocked_pairs=[bad_pair] if bad_pair else None,
+                )
+            elif trigger_key == "B6_no_profit_12h":
+                # Tighten entry gate to only high-conviction signals
+                override_applied = _write_sentinel_override(
+                    changes={"MIN_SCORE_TO_TRADE": 88.0},
+                    reason="B6 autonomous: no wins 12h, require higher score",
+                    ttl_sec=14400,
+                )
+
+            actions = []
+            if iid:
+                actions.append(f"ISSUE_FILED:{iid}")
+            if override_applied:
+                actions.append("PARAM_APPLIED")
+            entry["action_taken"] = " + ".join(actions) if actions else "NONE"
+            log.warning("TRIGGER [ACTIVE] %s → %s: %s",
+                        result["trigger"], entry["action_taken"], result["rationale"])
         _write_audit(entry)
     if fired_count == 0:
         log.info("cycle clean — no triggers")
