@@ -419,6 +419,7 @@ def _read_alpaca_state() -> dict:
         "losing_trades": state.get("losing_trades", 0),
         "open_positions": len(positions),
         "breakeven_armed": list(state.get("breakeven_armed", [])),
+        "pair_regime": dict(state.get("pair_regime", {}) or {}),
     }
 
 
@@ -488,7 +489,8 @@ def _write_command_file(path: str, mode: str, size_mult: float,
                         force_flatten: bool = False,
                         trend_phase: str = "",
                         trend_phase_hours: float = 0.0,
-                        max_positions: int = 0) -> None:
+                        max_positions: int = 0,
+                        dominant_regime_override: str = "") -> None:
     """Write a command file for a bot sleeve. Only used when SHADOW_MODE=False."""
     if SHADOW_MODE:
         return
@@ -517,12 +519,18 @@ def _write_command_file(path: str, mode: str, size_mult: float,
         "ts": datetime.now(timezone.utc).isoformat(),
         "source": "governor",
     }
-    # Include dominant regime for dynamic exit floor
-    try:
-        _truth = _read_json(os.path.join(BASE_DIR, "kraken_state_truth.json"))
-        cmd["dominant_regime"] = _truth.get("regime", {}).get("dominant", "RANGING")
-    except Exception:
-        pass
+    # Include dominant regime for dynamic exit floor.
+    # If caller supplied an override (e.g., stock_regime for alpaca), use
+    # that. Otherwise read the kraken-truth snapshot (crypto regime) for
+    # backwards compatibility with kraken/sfm commands.
+    if dominant_regime_override:
+        cmd["dominant_regime"] = dominant_regime_override
+    else:
+        try:
+            _truth = _read_json(os.path.join(BASE_DIR, "kraken_state_truth.json"))
+            cmd["dominant_regime"] = _truth.get("regime", {}).get("dominant", "RANGING")
+        except Exception:
+            pass
     if trend_phase:
         cmd["trend_phase"] = trend_phase
         cmd["trend_phase_hours"] = round(trend_phase_hours, 1)
@@ -999,7 +1007,9 @@ def evaluate_alpaca(alpaca_state: dict, cycle: int, supervisor_regime: str,
 
     decisions = []
 
-    # Regime-driven
+    # Regime-driven. supervisor_regime for alpaca is the STOCK regime
+    # (F1 decoupling); pass as dominant_regime_override so the cmd file
+    # doesn't inherit Kraken's crypto regime from kraken_state_truth.json.
     if regime_mode == "FLAT":
         decisions.append(GovernorDecision(
             ts=now_iso, cycle=cycle, action="FORCE_FLAT", sleeve="alpaca",
@@ -1007,7 +1017,8 @@ def evaluate_alpaca(alpaca_state: dict, cycle: int, supervisor_regime: str,
             shadow=SHADOW_MODE, metrics=metrics,
         ))
         _write_command_file(CMD_ALPACA, "DEFENSE", 0.0, False,
-                            f"Governor FLAT: {supervisor_regime}", "alpaca", force_flatten=True)
+                            f"Governor FLAT: {supervisor_regime}", "alpaca",
+                            force_flatten=True, dominant_regime_override=supervisor_regime)
     elif regime_mode == "REDUCE":
         decisions.append(GovernorDecision(
             ts=now_iso, cycle=cycle, action="REDUCE_EXPOSURE", sleeve="alpaca",
@@ -1015,7 +1026,8 @@ def evaluate_alpaca(alpaca_state: dict, cycle: int, supervisor_regime: str,
             shadow=SHADOW_MODE, metrics=metrics,
         ))
         _write_command_file(CMD_ALPACA, "SCOUT", 0.3, False,
-                            f"Governor REDUCE: {supervisor_regime}", "alpaca")
+                            f"Governor REDUCE: {supervisor_regime}", "alpaca",
+                            dominant_regime_override=supervisor_regime)
     elif regime_mode == "TRADE":
         decisions.append(GovernorDecision(
             ts=now_iso, cycle=cycle, action="TRADE_ACTIVE", sleeve="alpaca",
@@ -1023,7 +1035,8 @@ def evaluate_alpaca(alpaca_state: dict, cycle: int, supervisor_regime: str,
             shadow=SHADOW_MODE, metrics=metrics,
         ))
         _write_command_file(CMD_ALPACA, "NORMAL", 0.7, True,
-                            f"Governor TRADE: {supervisor_regime}", "alpaca")
+                            f"Governor TRADE: {supervisor_regime}", "alpaca",
+                            dominant_regime_override=supervisor_regime)
 
     # Win rate alert
     if total >= 10 and wins == 0:
@@ -1039,7 +1052,8 @@ def evaluate_alpaca(alpaca_state: dict, cycle: int, supervisor_regime: str,
             reason="Monitor only", shadow=SHADOW_MODE, metrics=metrics,
         ))
         _write_command_file(CMD_ALPACA, "SCOUT", 0.5, False,
-                            f"Governor HOLD: default cautious", "alpaca")
+                            f"Governor HOLD: default cautious", "alpaca",
+                            dominant_regime_override=supervisor_regime)
 
     # Hermes DD advisory override (tighten-only): if Hermes says no entries, block entries
     _alp_dd = alpaca_state.get("dd_pct", 0)
@@ -1051,7 +1065,8 @@ def evaluate_alpaca(alpaca_state: dict, cycle: int, supervisor_regime: str,
             shadow=SHADOW_MODE, metrics=metrics,
         ))
         _write_command_file(CMD_ALPACA, "DEFENSE", 0.0, False,
-                            f"Governor: Hermes DD override (DD={_alp_dd:.1f}%)", "alpaca")
+                            f"Governor: Hermes DD override (DD={_alp_dd:.1f}%)", "alpaca",
+                            dominant_regime_override=supervisor_regime)
         log.info("[GOVERNOR] Alpaca Hermes DD override: entry_allowed=false (DD=%.1f%%)", _alp_dd)
 
     # Shadow classification (6-level)
@@ -1113,16 +1128,32 @@ def run_governor(cycle: int) -> List[GovernorDecision]:
     # AUTHORITATIVE regime: Governor classifies from per-pair data (most granular).
     # Brain uses macro regime (RISK_ON/OFF) for advisory only — governor overrides.
     # No duplication conflict: governor decides, brain advises.
+    #
+    # Crypto regime (Kraken + SFM): from Kraken's pair_regime.
+    # Stock regime (Alpaca): from Alpaca's own pair_regime. Decoupled from
+    # crypto so Alpaca trades on stock-market state, not on BTC trend.
+    # Falls back to RANGING (SCOUT / entries_allowed=True / size_mult=0.3)
+    # if Alpaca hasn't reported a pair_regime yet -- safe default.
     kraken_pair_regime = enzo.get("pair_regime", {})
-    dominant_regime = classify_dominant_regime(kraken_pair_regime)
+    crypto_regime = classify_dominant_regime(kraken_pair_regime)
+
+    alpaca_pair_regime = alpaca.get("pair_regime", {})
+    stock_regime = classify_dominant_regime(alpaca_pair_regime) if alpaca_pair_regime else "RANGING"
+
+    # Kept as `dominant_regime` for any downstream caller expecting the old
+    # name -- this remains the crypto-universe regime.
+    dominant_regime = crypto_regime
 
     # Read recent exits for Kraken
     kraken_exits = _read_recent_exits("kraken")
 
-    # Evaluate each sleeve with regime context
+    # Evaluate each sleeve with regime context.
+    #   Kraken  -> crypto_regime (its own pair_regime)
+    #   SFM     -> crypto_regime (also crypto sleeve)
+    #   Alpaca  -> stock_regime  (stock pair_regime; ISSUE-013 F1 decoupling)
     all_decisions.extend(evaluate_kraken(enzo, kraken_exits, cycle, _hermes_advisory))
-    all_decisions.extend(evaluate_sfm(sfm, cycle, dominant_regime, _hermes_advisory))
-    all_decisions.extend(evaluate_alpaca(alpaca, cycle, dominant_regime, _hermes_advisory))
+    all_decisions.extend(evaluate_sfm(sfm, cycle, crypto_regime, _hermes_advisory))
+    all_decisions.extend(evaluate_alpaca(alpaca, cycle, stock_regime, _hermes_advisory))
 
     # ── Cross-sleeve correlation guard ─────────────────────────────────
     # If both crypto sleeves (Kraken + SFM) are >70% deployed AND BTC dropped

@@ -40,8 +40,9 @@ from supervisor_governor import (
     CMD_KRAKEN, CMD_SFM, CMD_ALPACA,
     REGIME_BEHAVIOR, DEFAULT_BEHAVIOR,
     EXPECTANCY_FREEZE_THRESHOLD,
-    ENZOBOT_DIR,
+    ENZOBOT_DIR, ALPACA_DIR,
     compute_rolling_expectancy,
+    classify_dominant_regime,
 )
 
 EXIT_LOG = os.path.join(ENZOBOT_DIR, "logs", "exit_counterfactuals.jsonl")
@@ -112,17 +113,38 @@ def _check_dd_override_respected() -> List[str]:
 
 
 def _check_regime_behavior_respected() -> List[str]:
-    """INV-3: If regime maps to no-entry behavior, no command file allows entries."""
+    """INV-3: If regime maps to no-entry behavior, no command file allows entries.
+
+    Per-sleeve regime source (NOT the cmd file -- cmd files can be stale
+    when governor is skipped, creating a self-lock where kernel keeps
+    halting on the stale value it needs governor to rewrite):
+      - kraken : crypto dominant from kraken_state_truth.json
+      - sfm    : crypto dominant (SFM is also a crypto sleeve)
+      - alpaca : classify_dominant_regime(alpaca_state.pair_regime)
+    """
     violations = []
-    truth = _read_json(KRAKEN_TRUTH_FILE)
-    dominant = truth.get("regime", {}).get("dominant", "RANGING")
-    behavior = REGIME_BEHAVIOR.get(dominant, DEFAULT_BEHAVIOR)
-    if behavior.get("entries_allowed") is False:
-        for sleeve, path in SLEEVE_CMD_MAP.items():
+    crypto_truth = _read_json(KRAKEN_TRUTH_FILE)
+    crypto_dominant = crypto_truth.get("regime", {}).get("dominant", "RANGING")
+
+    alpaca_state = _read_json(os.path.join(ALPACA_DIR, "alpaca_state.json"))
+    alpaca_pair_regime = alpaca_state.get("pair_regime", {})
+    alpaca_dominant = classify_dominant_regime(alpaca_pair_regime) if alpaca_pair_regime else "RANGING"
+
+    sleeve_regimes = {
+        "kraken": crypto_dominant,
+        "sfm":    crypto_dominant,
+        "alpaca": alpaca_dominant,
+    }
+
+    for sleeve, path in SLEEVE_CMD_MAP.items():
+        sleeve_regime = sleeve_regimes.get(sleeve, crypto_dominant)
+        behavior = REGIME_BEHAVIOR.get(sleeve_regime, DEFAULT_BEHAVIOR)
+        if behavior.get("entries_allowed") is False:
             cmd = _read_json(path)
             if cmd.get("entry_allowed") is True:
                 violations.append(
-                    f"INV-3: regime={dominant} (no entries) but {sleeve}_cmd has entry_allowed=true"
+                    f"INV-3: {sleeve} regime={sleeve_regime} (no entries) "
+                    f"but {sleeve}_cmd has entry_allowed=true"
                 )
     return violations
 
