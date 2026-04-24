@@ -2,7 +2,7 @@
   "_meta": {
     "description": "Persistent upgrade schedule. Owner: Opus (auto-updates on ship/revert). Read by opus_review.py for 08:00 AM / 08:00 PM packets. Read/update by operator at briefs.",
     "schema": "upgrades[]: {id, title, priority, status, approved_in_principle, gate, target_window, est_build_time, expected_protection_usd_per_week, exit_condition, files_touched, depends_on, notes, history[]}",
-    "last_update": "2026-04-24T13:38:34.910347+00:00",
+    "last_update": "2026-04-24T13:40:14.881634+00:00",
     "status_values": [
       "pending_approval",
       "approved",
@@ -606,7 +606,7 @@
       "id": "ALPACA_SENTINEL_TRIGGERS",
       "title": "Alpaca sentinel triggers (B2/B4/B6/B12 adapted)",
       "priority": 7,
-      "status": "built_awaiting_restart",
+      "status": "live",
       "approved_in_principle": true,
       "gate": "All foundation pieces shipped",
       "target_window": "2026-04-26 08:00 ET",
@@ -642,6 +642,12 @@
           "event": "status_change:pending_approval->built_awaiting_restart",
           "by": "Opus",
           "note": "A6a built (sentinel-side only): 4 new alpaca triggers, 2 write helpers, 4 templates, dedup windows. Engine-side wires (MIN_SCORE/TIME_STOP/MIN_HOLD gates) deferred to A6b at market close. Supervisor restart only (not alpacabot)."
+        },
+        {
+          "ts": "2026-04-24T13:40:14.881621+00:00",
+          "event": "status_change:built_awaiting_restart->live",
+          "by": "Opus",
+          "note": "A6a live. Sentinel 16 TRIGGERS. 4 alpaca triggers quietly watching - ledger 0 rows, first exit populates it."
         }
       ]
     },
