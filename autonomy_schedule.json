@@ -2,7 +2,7 @@
   "_meta": {
     "description": "Persistent upgrade schedule. Owner: Opus (auto-updates on ship/revert). Read by opus_review.py for 08:00 AM / 08:00 PM packets. Read/update by operator at briefs.",
     "schema": "upgrades[]: {id, title, priority, status, approved_in_principle, gate, target_window, est_build_time, expected_protection_usd_per_week, exit_condition, files_touched, depends_on, notes, history[]}",
-    "last_update": "2026-04-24T12:55:48.115857+00:00",
+    "last_update": "2026-04-24T13:04:13.667858+00:00",
     "status_values": [
       "pending_approval",
       "approved",
@@ -379,7 +379,7 @@
       "id": "ALPACA_EXIT_LEDGER",
       "title": "Alpaca exit counterfactuals ledger",
       "priority": 2,
-      "status": "built_awaiting_restart",
+      "status": "live",
       "approved_in_principle": true,
       "gate": "Next window; operator green-light",
       "target_window": "2026-04-24 20:00 ET",
@@ -410,6 +410,12 @@
           "event": "status_change:pending_approval->built_awaiting_restart",
           "by": "Opus",
           "note": "alpaca_state.py writes to alpaca_exit_counterfactuals.jsonl on every record_sell. Smoke-tested round-trip OK. Awaiting alpacabot restart."
+        },
+        {
+          "ts": "2026-04-24T13:04:13.656288+00:00",
+          "event": "status_change:built_awaiting_restart->live",
+          "by": "Opus",
+          "note": "Live after 3-restart iteration. Ledger file exists. Next exit populates it with unified schema."
         }
       ]
     },
@@ -417,7 +423,7 @@
       "id": "ALPACA_STATE_SCHEMA_UNIFY",
       "title": "Unify alpaca_state.json field names",
       "priority": 3,
-      "status": "built_awaiting_restart",
+      "status": "live",
       "approved_in_principle": true,
       "gate": "Same window",
       "target_window": "2026-04-24 20:00 ET",
@@ -448,6 +454,12 @@
           "event": "status_change:pending_approval->built_awaiting_restart",
           "by": "Opus",
           "note": "Canonical equity_usd, realized_pnl_usd, unrealized_pnl_usd, dd_pct, peak_equity_usd added. Engine populates each cycle. Aliases preserved. Smoke-tested. Awaiting restart."
+        },
+        {
+          "ts": "2026-04-24T13:04:13.667850+00:00",
+          "event": "status_change:built_awaiting_restart->live",
+          "by": "Opus",
+          "note": "Live. equity_usd=534.85, dd_pct=-0.08%, cycle=1871 post-restart 4bbb0c5."
         }
       ]
     },
