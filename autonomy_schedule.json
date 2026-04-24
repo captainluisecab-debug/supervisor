@@ -2,28 +2,73 @@
   "_meta": {
     "description": "Persistent upgrade schedule. Owner: Opus (auto-updates on ship/revert). Read by opus_review.py for 08:00 AM / 08:00 PM packets. Read/update by operator at briefs.",
     "schema": "upgrades[]: {id, title, priority, status, approved_in_principle, gate, target_window, est_build_time, expected_protection_usd_per_week, exit_condition, files_touched, depends_on, notes, history[]}",
-    "last_update": "2026-04-23T21:40:00Z",
-    "status_values": ["pending_approval", "approved", "in_progress", "built_awaiting_restart", "live", "validated", "reverted", "deferred"]
+    "last_update": "2026-04-24T12:17:50.599054+00:00",
+    "status_values": [
+      "pending_approval",
+      "approved",
+      "in_progress",
+      "built_awaiting_restart",
+      "live",
+      "validated",
+      "reverted",
+      "deferred"
+    ]
   },
   "upgrades": [
     {
       "id": "B12",
       "title": "Loss-streak universe pause",
       "priority": 1,
-      "status": "pending_approval",
+      "status": "built_awaiting_restart",
       "approved_in_principle": true,
       "gate": "8 AM 2026-04-24 brief: clean overnight autonomy stack + operator green-light",
       "target_window": "2026-04-24 08:00 ET",
       "est_build_time": "1h",
-      "expected_protection_usd_per_week": [30, 60],
-      "expected_pnl_improvement_usd_per_week": [15, 25],
-      "exit_condition": "7-day cumulative attribution HELPED==0 and HURT>=2 → revert trigger; L1 freeze on 2 HURT verdicts same param",
-      "files_touched": ["supervisor/opus_sentinel.py"],
+      "expected_protection_usd_per_week": [
+        30,
+        60
+      ],
+      "expected_pnl_improvement_usd_per_week": [
+        15,
+        25
+      ],
+      "exit_condition": "7-day cumulative attribution HELPED==0 and HURT>=2 \u2192 revert trigger; L1 freeze on 2 HURT verdicts same param",
+      "files_touched": [
+        "supervisor/opus_sentinel.py"
+      ],
       "depends_on": [],
-      "mechanism": "5 consec universe losses → sentinel_override: TARGET_DEPLOY_PCT=0.25 + MIN_SCORE_TO_TRADE=88 for 2h TTL; pair_status COOLDOWN on last losing pair 4h TTL",
+      "mechanism": "5 consec universe losses \u2192 sentinel_override: TARGET_DEPLOY_PCT=0.25 + MIN_SCORE_TO_TRADE=88 for 2h TTL; pair_status COOLDOWN on last losing pair 4h TTL",
       "history": [
-        {"ts": "2026-04-23T21:30:00Z", "event": "proposed", "by": "Opus", "note": "direct response to observed 10/10 losses on Kraken"},
-        {"ts": "2026-04-23T21:35:00Z", "event": "approved_in_principle", "by": "operator", "note": "priority 1 of 3"}
+        {
+          "ts": "2026-04-23T21:30:00Z",
+          "event": "proposed",
+          "by": "Opus",
+          "note": "direct response to observed 10/10 losses on Kraken"
+        },
+        {
+          "ts": "2026-04-23T21:35:00Z",
+          "event": "approved_in_principle",
+          "by": "operator",
+          "note": "priority 1 of 3"
+        },
+        {
+          "ts": "2026-04-24T12:15:38.014157+00:00",
+          "event": "status_change:pending_approval->in_progress",
+          "by": "Opus",
+          "note": "Operator approved 8 AM 2026-04-24. Build starting with force_flatten-inclusive streak counter."
+        },
+        {
+          "ts": "2026-04-24T12:17:50.589401+00:00",
+          "event": "status_change:in_progress->built_awaiting_restart",
+          "by": "Opus",
+          "note": "Code built + syntax OK + dry-run fires on live data (18-loss streak detected, -$22.56). Awaiting supervisor restart to go live."
+        },
+        {
+          "ts": "2026-04-24T12:17:50.599047+00:00",
+          "event": "dry_run_result",
+          "by": "Opus",
+          "note": "18 consec losses found in live exit_counterfactuals.jsonl. Will fire on first post-restart sentinel cycle. Action: TARGET_DEPLOY_PCT=0.25, MIN_SCORE_TO_TRADE=88, NEAR/USD COOLDOWN 4h."
+        }
       ]
     },
     {
@@ -35,15 +80,35 @@
       "gate": "B12 validated clean for 24h + operator green-light at 8 AM or 8 PM brief",
       "target_window": "2026-04-24 20:00 ET or later",
       "est_build_time": "2h",
-      "expected_protection_usd_per_week": [50, 100],
-      "expected_pnl_improvement_usd_per_week": [20, 40],
-      "exit_condition": "7-day cumulative attribution HELPED==0 → revert; false-positive rate >50% (gate blocks entries that would have won) → reconsider threshold",
-      "files_touched": ["supervisor/opus_sentinel.py", "supervisor/supervisor_regime.py"],
-      "depends_on": ["B12"],
+      "expected_protection_usd_per_week": [
+        50,
+        100
+      ],
+      "expected_pnl_improvement_usd_per_week": [
+        20,
+        40
+      ],
+      "exit_condition": "7-day cumulative attribution HELPED==0 \u2192 revert; false-positive rate >50% (gate blocks entries that would have won) \u2192 reconsider threshold",
+      "files_touched": [
+        "supervisor/opus_sentinel.py",
+        "supervisor/supervisor_regime.py"
+      ],
+      "depends_on": [
+        "B12"
+      ],
       "mechanism": "If BTC 7d trend < 3% OR BTC 24h range < 1.5%, sentinel raises Kraken alt MIN_SCORE_TO_TRADE to 85 (6h TTL, refresh while condition persists). BTC/USD pair exempt.",
       "history": [
-        {"ts": "2026-04-23T21:30:00Z", "event": "proposed", "by": "Opus"},
-        {"ts": "2026-04-23T21:35:00Z", "event": "approved_in_principle", "by": "operator", "note": "priority 2 of 3"}
+        {
+          "ts": "2026-04-23T21:30:00Z",
+          "event": "proposed",
+          "by": "Opus"
+        },
+        {
+          "ts": "2026-04-23T21:35:00Z",
+          "event": "approved_in_principle",
+          "by": "operator",
+          "note": "priority 2 of 3"
+        }
       ]
     },
     {
@@ -55,15 +120,35 @@
       "gate": "B12 + BTC_DOM_GATE both validated clean + operator green-light",
       "target_window": "2026-04-25 08:00 ET or later",
       "est_build_time": "1.5h",
-      "expected_protection_usd_per_week": [10, 20],
-      "expected_pnl_improvement_usd_per_week": [5, 15],
-      "exit_condition": "7-day cumulative attribution <0 → revert; cooldown blocks >2 successful entries per week → tighten condition",
-      "files_touched": ["supervisor/supervisor_governor.py"],
-      "depends_on": ["B12", "BTC_DOM_GATE"],
+      "expected_protection_usd_per_week": [
+        10,
+        20
+      ],
+      "expected_pnl_improvement_usd_per_week": [
+        5,
+        15
+      ],
+      "exit_condition": "7-day cumulative attribution <0 \u2192 revert; cooldown blocks >2 successful entries per week \u2192 tighten condition",
+      "files_touched": [
+        "supervisor/supervisor_governor.py"
+      ],
+      "depends_on": [
+        "B12",
+        "BTC_DOM_GATE"
+      ],
       "mechanism": "On regime change, governor forces SCOUT mode with entry_allowed=false for 1h regardless of flip direction. Kernel HALT overrides (can't block flatten).",
       "history": [
-        {"ts": "2026-04-23T21:30:00Z", "event": "proposed", "by": "Opus"},
-        {"ts": "2026-04-23T21:35:00Z", "event": "approved_in_principle", "by": "operator", "note": "priority 3 of 3"}
+        {
+          "ts": "2026-04-23T21:30:00Z",
+          "event": "proposed",
+          "by": "Opus"
+        },
+        {
+          "ts": "2026-04-23T21:35:00Z",
+          "event": "approved_in_principle",
+          "by": "operator",
+          "note": "priority 3 of 3"
+        }
       ]
     },
     {
@@ -75,14 +160,27 @@
       "gate": "Trivial 2-line fix during next maintenance window. Operator ack at 8 AM brief.",
       "target_window": "2026-04-24 08:00 ET",
       "est_build_time": "5m",
-      "expected_protection_usd_per_week": [0, 0],
-      "expected_pnl_improvement_usd_per_week": [0, 0],
-      "exit_condition": "n/a — cosmetic only",
-      "files_touched": ["enzobot/engine.py"],
+      "expected_protection_usd_per_week": [
+        0,
+        0
+      ],
+      "expected_pnl_improvement_usd_per_week": [
+        0,
+        0
+      ],
+      "exit_condition": "n/a \u2014 cosmetic only",
+      "files_touched": [
+        "enzobot/engine.py"
+      ],
       "depends_on": [],
       "mechanism": "In _apply_pair_status: if pair.startswith('_'): continue. Skips _meta log noise.",
       "history": [
-        {"ts": "2026-04-23T21:26:00Z", "event": "observed", "by": "Opus", "note": "_meta key rendered as active_entry in log post-restart, non-functional"}
+        {
+          "ts": "2026-04-23T21:26:00Z",
+          "event": "observed",
+          "by": "Opus",
+          "note": "_meta key rendered as active_entry in log post-restart, non-functional"
+        }
       ]
     },
     {
@@ -94,14 +192,27 @@
       "gate": "Trivial parser fix. Non-blocking. Operator ack at 8 AM.",
       "target_window": "2026-04-24 08:00 ET",
       "est_build_time": "15m",
-      "expected_protection_usd_per_week": [0, 0],
-      "expected_pnl_improvement_usd_per_week": [0, 0],
-      "exit_condition": "n/a — reporting only",
-      "files_touched": ["supervisor/opus_review.py"],
+      "expected_protection_usd_per_week": [
+        0,
+        0
+      ],
+      "expected_pnl_improvement_usd_per_week": [
+        0,
+        0
+      ],
+      "exit_condition": "n/a \u2014 reporting only",
+      "files_touched": [
+        "supervisor/opus_review.py"
+      ],
       "depends_on": [],
       "mechanism": "Filter issues.jsonl by open state (not closed) + parse early-format records cleanly. Eliminates '[?] ?' rows.",
       "history": [
-        {"ts": "2026-04-23T20:10:00Z", "event": "observed", "by": "Opus", "note": "19:50 packet showed 21 open issues with many '[?] ?' unparsed rows"}
+        {
+          "ts": "2026-04-23T20:10:00Z",
+          "event": "observed",
+          "by": "Opus",
+          "note": "19:50 packet showed 21 open issues with many '[?] ?' unparsed rows"
+        }
       ]
     },
     {
@@ -113,14 +224,31 @@
       "gate": "2 weeks of tuning_outcomes.jsonl data accumulated",
       "target_window": "2026-05-07 or later",
       "est_build_time": "6h",
-      "expected_protection_usd_per_week": [0, 0],
-      "expected_pnl_improvement_usd_per_week": [0, 0],
-      "exit_condition": "n/a — self-audit mechanism",
-      "files_touched": ["supervisor/autonomy_guard.py", "supervisor/shadow_brain.py (new)"],
-      "depends_on": ["B12", "BTC_DOM_GATE"],
-      "mechanism": "Run shadow param set (operator baseline) against same market ticks. Weekly compare live-vs-shadow PnL. If shadow beats live trailing-7d → auto-revert to baseline + operator flag.",
+      "expected_protection_usd_per_week": [
+        0,
+        0
+      ],
+      "expected_pnl_improvement_usd_per_week": [
+        0,
+        0
+      ],
+      "exit_condition": "n/a \u2014 self-audit mechanism",
+      "files_touched": [
+        "supervisor/autonomy_guard.py",
+        "supervisor/shadow_brain.py (new)"
+      ],
+      "depends_on": [
+        "B12",
+        "BTC_DOM_GATE"
+      ],
+      "mechanism": "Run shadow param set (operator baseline) against same market ticks. Weekly compare live-vs-shadow PnL. If shadow beats live trailing-7d \u2192 auto-revert to baseline + operator flag.",
       "history": [
-        {"ts": "2026-04-23T21:00:00Z", "event": "proposed_deferred", "by": "Opus", "note": "needs data to be meaningful"}
+        {
+          "ts": "2026-04-23T21:00:00Z",
+          "event": "proposed_deferred",
+          "by": "Opus",
+          "note": "needs data to be meaningful"
+        }
       ]
     },
     {
@@ -132,14 +260,28 @@
       "gate": "30 days of verdict data. Start collecting now; build later.",
       "target_window": "2026-05-23 or later",
       "est_build_time": "3h",
-      "expected_protection_usd_per_week": [0, 0],
-      "expected_pnl_improvement_usd_per_week": [0, 0],
+      "expected_protection_usd_per_week": [
+        0,
+        0
+      ],
+      "expected_pnl_improvement_usd_per_week": [
+        0,
+        0
+      ],
       "exit_condition": "n/a",
-      "files_touched": ["supervisor/autonomy_guard.py"],
-      "depends_on": ["B12"],
-      "mechanism": "Compare expected_impact_usd (pre-write) vs realized 6h delta. If 30d calibration <55% correct direction → halve adjustment magnitudes autonomously.",
+      "files_touched": [
+        "supervisor/autonomy_guard.py"
+      ],
+      "depends_on": [
+        "B12"
+      ],
+      "mechanism": "Compare expected_impact_usd (pre-write) vs realized 6h delta. If 30d calibration <55% correct direction \u2192 halve adjustment magnitudes autonomously.",
       "history": [
-        {"ts": "2026-04-23T21:00:00Z", "event": "proposed_deferred", "by": "Opus"}
+        {
+          "ts": "2026-04-23T21:00:00Z",
+          "event": "proposed_deferred",
+          "by": "Opus"
+        }
       ]
     },
     {
@@ -148,17 +290,30 @@
       "priority": 30,
       "status": "deferred",
       "approved_in_principle": false,
-      "gate": "Alpaca shows mid-day loss evidence (currently 5/5 clean — no signal)",
+      "gate": "Alpaca shows mid-day loss evidence (currently 5/5 clean \u2014 no signal)",
       "target_window": "on evidence",
       "est_build_time": "30m",
-      "expected_protection_usd_per_week": [0, 0],
-      "expected_pnl_improvement_usd_per_week": [0, 0],
+      "expected_protection_usd_per_week": [
+        0,
+        0
+      ],
+      "expected_pnl_improvement_usd_per_week": [
+        0,
+        0
+      ],
       "exit_condition": "defer until needed",
-      "files_touched": ["alpacabot/alpaca_engine.py"],
+      "files_touched": [
+        "alpacabot/alpaca_engine.py"
+      ],
       "depends_on": [],
       "mechanism": "Block new alpaca entries 11:30-13:30 ET.",
       "history": [
-        {"ts": "2026-04-23T21:30:00Z", "event": "considered_deferred", "by": "Opus", "note": "Alpaca 5/5 wins; no chop loss evidence yet"}
+        {
+          "ts": "2026-04-23T21:30:00Z",
+          "event": "considered_deferred",
+          "by": "Opus",
+          "note": "Alpaca 5/5 wins; no chop loss evidence yet"
+        }
       ]
     },
     {
@@ -170,12 +325,20 @@
       "gate": "Weekend PnL data shows worse edge than weekdays",
       "target_window": "on evidence",
       "est_build_time": "2h",
-      "expected_protection_usd_per_week": [0, 0],
-      "expected_pnl_improvement_usd_per_week": [0, 0],
+      "expected_protection_usd_per_week": [
+        0,
+        0
+      ],
+      "expected_pnl_improvement_usd_per_week": [
+        0,
+        0
+      ],
       "exit_condition": "defer until evidence",
-      "files_touched": ["supervisor/supervisor_governor.py"],
+      "files_touched": [
+        "supervisor/supervisor_governor.py"
+      ],
       "depends_on": [],
-      "mechanism": "Force SCOUT Fri 17:00 ET → Sun 18:00 ET unless BTC 24h range > 1.5%.",
+      "mechanism": "Force SCOUT Fri 17:00 ET \u2192 Sun 18:00 ET unless BTC 24h range > 1.5%.",
       "history": []
     },
     {
@@ -187,12 +350,23 @@
       "gate": "4+ weeks of per-pair PnL attribution data",
       "target_window": "2026-05-23 or later",
       "est_build_time": "4h",
-      "expected_protection_usd_per_week": [0, 0],
-      "expected_pnl_improvement_usd_per_week": [0, 0],
-      "exit_condition": "operator approval required — affects universe",
-      "files_touched": ["supervisor/opus_sentinel.py"],
-      "depends_on": ["B12", "BTC_DOM_GATE"],
-      "mechanism": "Pair < 35% win rate over last 20 trades → auto-DISABLED_SOFT 7d. Operator veto at brief.",
+      "expected_protection_usd_per_week": [
+        0,
+        0
+      ],
+      "expected_pnl_improvement_usd_per_week": [
+        0,
+        0
+      ],
+      "exit_condition": "operator approval required \u2014 affects universe",
+      "files_touched": [
+        "supervisor/opus_sentinel.py"
+      ],
+      "depends_on": [
+        "B12",
+        "BTC_DOM_GATE"
+      ],
+      "mechanism": "Pair < 35% win rate over last 20 trades \u2192 auto-DISABLED_SOFT 7d. Operator veto at brief.",
       "history": []
     }
   ]

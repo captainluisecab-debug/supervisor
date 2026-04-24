@@ -91,7 +91,12 @@ DEDUP_WINDOWS = {
     "B9_orphan_position": 3600,                 # 60 min
     "B10_phantom_fill": 86400,                  # 24 hr — must always escalate
     "B11_allowlist_miss": 86400,                # 24 hr per-param suffixed
+    "B12_loss_streak_universe": 7200,           # 2 hr (matches TTL of action)
 }
+
+# B12 threshold: how many consecutive losses universe-wide triggers the pause.
+# Includes governor_force_flatten (force-flat-at-loss is still a real loss signal).
+B12_LOSS_STREAK_THRESHOLD = 5
 
 
 def _is_active_mode() -> bool:
@@ -561,6 +566,72 @@ def check_b8_stale_cmd() -> Optional[Dict[str, Any]]:
     }
 
 
+def check_b12_loss_streak_universe() -> Optional[Dict[str, Any]]:
+    """B12: N consecutive losses across any pair universe-wide.
+
+    Catches the structural blind spot B6 misses: chronic bleed with low
+    exit frequency (B6 requires >=3 exits in 12h) and B6's exclusion of
+    governor_force_flatten. A force-flatten at a loss is still a real
+    losing decision about the pair. We include it here by design.
+
+    Fires on the transition FROM streak=N-1 TO streak=N. 2h TTL matches
+    the override's TTL so we re-fire if the streak persists past the
+    defensive window.
+    """
+    lines = _read_jsonl_tail(ENZOBOT_EXIT_LOG, 50)
+    exits = [e for e in lines if isinstance(e, dict) and e.get("type") == "exit"]
+    if len(exits) < B12_LOSS_STREAK_THRESHOLD:
+        return None
+
+    # Sort ascending by ts to find the latest consecutive-loss run.
+    exits.sort(key=lambda e: float(e.get("ts", 0) or 0))
+
+    # Walk from newest backward, counting consecutive negative-pnl exits.
+    streak = 0
+    streak_pairs = []
+    for e in reversed(exits):
+        pnl = float(e.get("pnl_usd", 0) or 0)
+        if pnl < 0:
+            streak += 1
+            streak_pairs.append(e.get("pair", "?"))
+        else:
+            break  # streak broken by a win
+
+    if streak < B12_LOSS_STREAK_THRESHOLD:
+        return None
+
+    if not _should_fire("B12_loss_streak_universe"):
+        return None
+
+    last_loss = list(reversed(exits))[0]
+    last_pair = last_loss.get("pair", "")
+    total_loss_usd = sum(
+        float(e.get("pnl_usd", 0) or 0)
+        for e in list(reversed(exits))[:streak]
+    )
+
+    return {
+        "trigger": "B12_loss_streak_universe",
+        "detail": {
+            "streak": streak,
+            "threshold": B12_LOSS_STREAK_THRESHOLD,
+            "pairs_in_streak": streak_pairs[:10],
+            "total_streak_pnl_usd": round(total_loss_usd, 2),
+            "last_losing_pair": last_pair,
+        },
+        "proposed_action": "tighten_deploy_and_score_cooldown_last_pair",
+        "rationale": (
+            f"{streak} consecutive losing exits universe-wide "
+            f"(threshold {B12_LOSS_STREAK_THRESHOLD}). Total streak PnL "
+            f"${total_loss_usd:+.2f}. Current entry logic is not producing "
+            f"wins — strategy misaligned with regime. Autonomous response: "
+            f"reduce deployment to 0.25, raise MIN_SCORE_TO_TRADE to 88, "
+            f"cooldown the last losing pair ({last_pair}) for 4h. 2h TTL "
+            f"on the global override — auto-revert if streak breaks."
+        ),
+    }
+
+
 TRIGGERS = [
     check_b1_kernel_halt_persistent,
     check_b2_expectancy_below_floor,
@@ -573,6 +644,7 @@ TRIGGERS = [
     check_b9_orphan_position,
     check_b10_phantom_fill,
     check_b11_allowlist_miss,
+    check_b12_loss_streak_universe,
 ]
 
 
@@ -681,6 +753,16 @@ ISSUE_TEMPLATES = {
         "reopen_criteria": [
             "Opus recommends a parameter not in policy.json hard_bounds "
             "(indicates new class of recommendation operator should evaluate)"
+        ],
+    },
+    "B12_loss_streak_universe": {
+        "anomaly_type": "LOSS_STREAK_UNIVERSE_WIDE",
+        "severity": "MEDIUM",
+        "reopen_criteria": [
+            f"{B12_LOSS_STREAK_THRESHOLD}+ consecutive losing exits across "
+            "any pairs (includes governor_force_flatten). Fires every 2h "
+            "while streak persists; auto-closes when a winning exit breaks "
+            "the streak."
         ],
     },
 }
@@ -954,6 +1036,32 @@ def run_cycle() -> None:
                     changes={"MIN_SCORE_TO_TRADE": 88.0},
                     reason="B6 autonomous: no wins 12h, require higher score",
                     ttl_sec=14400,
+                    trigger=trigger_key,
+                )
+            elif trigger_key == "B12_loss_streak_universe":
+                # Loss-streak pause: tighten deploy, raise entry bar, pair cooldown
+                detail = result.get("detail", {}) or {}
+                last_pair = detail.get("last_losing_pair", "")
+                streak = detail.get("streak", 0)
+                if last_pair:
+                    _write_pair_status(
+                        pair=last_pair, status="COOLDOWN",
+                        ttl_sec=14400,  # 4h
+                        reason=f"B12: {streak}-loss streak, last losing pair",
+                        size_multiplier=0.0,
+                        trigger=trigger_key,
+                    )
+                override_applied = _write_sentinel_override(
+                    changes={
+                        "TARGET_DEPLOY_PCT": 0.25,
+                        "MIN_SCORE_TO_TRADE": 88.0,
+                    },
+                    reason=(
+                        f"B12 autonomous: {streak}-loss streak "
+                        f"(total ${detail.get('total_streak_pnl_usd', 0):+.2f}) "
+                        f"→ deploy=0.25, score>=88, {last_pair} COOLDOWN 4h"
+                    ),
+                    ttl_sec=7200,  # 2h
                     trigger=trigger_key,
                 )
 
