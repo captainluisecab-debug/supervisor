@@ -2,7 +2,7 @@
   "_meta": {
     "description": "Persistent upgrade schedule. Owner: Opus (auto-updates on ship/revert). Read by opus_review.py for 08:00 AM / 08:00 PM packets. Read/update by operator at briefs.",
     "schema": "upgrades[]: {id, title, priority, status, approved_in_principle, gate, target_window, est_build_time, expected_protection_usd_per_week, exit_condition, files_touched, depends_on, notes, history[]}",
-    "last_update": "2026-04-24T12:17:50.599054+00:00",
+    "last_update": "2026-04-24T12:47:45.758289+00:00",
     "status_values": [
       "pending_approval",
       "approved",
@@ -19,7 +19,7 @@
       "id": "B12",
       "title": "Loss-streak universe pause",
       "priority": 1,
-      "status": "built_awaiting_restart",
+      "status": "live",
       "approved_in_principle": true,
       "gate": "8 AM 2026-04-24 brief: clean overnight autonomy stack + operator green-light",
       "target_window": "2026-04-24 08:00 ET",
@@ -68,13 +68,19 @@
           "event": "dry_run_result",
           "by": "Opus",
           "note": "18 consec losses found in live exit_counterfactuals.jsonl. Will fire on first post-restart sentinel cycle. Action: TARGET_DEPLOY_PCT=0.25, MIN_SCORE_TO_TRADE=88, NEAR/USD COOLDOWN 4h."
+        },
+        {
+          "ts": "2026-04-24T12:23:05.571351+00:00",
+          "event": "status_change:built_awaiting_restart->live",
+          "by": "Opus",
+          "note": "All three writes land after attribution-bypass fix (commit 582cfee). Engine applied override at 08:22:35. Monitoring 7d attribution window."
         }
       ]
     },
     {
       "id": "BTC_DOM_GATE",
       "title": "BTC dominance gate for Kraken alts",
-      "priority": 2,
+      "priority": 20,
       "status": "pending_approval",
       "approved_in_principle": true,
       "gate": "B12 validated clean for 24h + operator green-light at 8 AM or 8 PM brief",
@@ -114,7 +120,7 @@
     {
       "id": "POST_FLIP_COOLDOWN",
       "title": "Post-regime-flip observation cooldown",
-      "priority": 3,
+      "priority": 21,
       "status": "pending_approval",
       "approved_in_principle": true,
       "gate": "B12 + BTC_DOM_GATE both validated clean + operator green-light",
@@ -154,7 +160,7 @@
     {
       "id": "COSMETIC_META_KEY",
       "title": "Skip _meta key in pair_status reader (cosmetic)",
-      "priority": 10,
+      "priority": 11,
       "status": "pending_approval",
       "approved_in_principle": false,
       "gate": "Trivial 2-line fix during next maintenance window. Operator ack at 8 AM brief.",
@@ -186,7 +192,7 @@
     {
       "id": "REVIEW_ISSUE_PARSER",
       "title": "Fix opus_review.py open-issue counter + parser",
-      "priority": 11,
+      "priority": 12,
       "status": "pending_approval",
       "approved_in_principle": false,
       "gate": "Trivial parser fix. Non-blocking. Operator ack at 8 AM.",
@@ -218,7 +224,7 @@
     {
       "id": "SHADOW_BASELINE",
       "title": "Shadow baseline counterfactual",
-      "priority": 20,
+      "priority": 40,
       "status": "deferred",
       "approved_in_principle": true,
       "gate": "2 weeks of tuning_outcomes.jsonl data accumulated",
@@ -254,7 +260,7 @@
     {
       "id": "CALIBRATION_TRACKER",
       "title": "Calibration tracker (metacognition)",
-      "priority": 21,
+      "priority": 41,
       "status": "deferred",
       "approved_in_principle": true,
       "gate": "30 days of verdict data. Start collecting now; build later.",
@@ -287,7 +293,7 @@
     {
       "id": "ALPACA_LUNCH_GATE",
       "title": "Alpaca lunch-hour entry block",
-      "priority": 30,
+      "priority": 100,
       "status": "deferred",
       "approved_in_principle": false,
       "gate": "Alpaca shows mid-day loss evidence (currently 5/5 clean \u2014 no signal)",
@@ -319,7 +325,7 @@
     {
       "id": "WEEKEND_KRAKEN_GATE",
       "title": "Weekend Kraken posture gate",
-      "priority": 31,
+      "priority": 101,
       "status": "deferred",
       "approved_in_principle": false,
       "gate": "Weekend PnL data shows worse edge than weekdays",
@@ -344,7 +350,7 @@
     {
       "id": "UNIVERSE_PRUNING",
       "title": "Pair-level universe pruning (autonomous DISABLED_SOFT)",
-      "priority": 32,
+      "priority": 102,
       "status": "deferred",
       "approved_in_principle": false,
       "gate": "4+ weeks of per-pair PnL attribution data",
@@ -368,6 +374,625 @@
       ],
       "mechanism": "Pair < 35% win rate over last 20 trades \u2192 auto-DISABLED_SOFT 7d. Operator veto at brief.",
       "history": []
+    },
+    {
+      "id": "ALPACA_EXIT_LEDGER",
+      "title": "Alpaca exit counterfactuals ledger",
+      "priority": 2,
+      "status": "pending_approval",
+      "approved_in_principle": true,
+      "gate": "Next window; operator green-light",
+      "target_window": "2026-04-24 20:00 ET",
+      "est_build_time": "1h",
+      "expected_protection_usd_per_week": [
+        0,
+        0
+      ],
+      "expected_pnl_improvement_usd_per_week": [
+        0,
+        0
+      ],
+      "exit_condition": "n/a - foundation",
+      "files_touched": [
+        "alpacabot/alpaca_engine.py"
+      ],
+      "depends_on": [],
+      "mechanism": "Write {ts,pair,side,entry_px,exit_px,qty,pnl_usd,exit_reason,hold_sec,regime_at_entry,regime_at_exit,score_at_entry} to alpaca_exit_counterfactuals.jsonl on every exit.",
+      "history": [
+        {
+          "ts": "2026-04-24T12:47:45.758267+00:00",
+          "event": "proposed",
+          "by": "Opus",
+          "note": "parity-first restructure 2026-04-24"
+        }
+      ]
+    },
+    {
+      "id": "ALPACA_STATE_SCHEMA_UNIFY",
+      "title": "Unify alpaca_state.json field names",
+      "priority": 3,
+      "status": "pending_approval",
+      "approved_in_principle": true,
+      "gate": "Same window",
+      "target_window": "2026-04-24 20:00 ET",
+      "est_build_time": "30m",
+      "expected_protection_usd_per_week": [
+        0,
+        0
+      ],
+      "expected_pnl_improvement_usd_per_week": [
+        0,
+        0
+      ],
+      "exit_condition": "n/a",
+      "files_touched": [
+        "alpacabot/alpaca_state.py"
+      ],
+      "depends_on": [],
+      "mechanism": "Add canonical equity_usd, realized_pnl_usd, unrealized_pnl_usd, dd_pct, peak_equity_usd fields. Keep aliases.",
+      "history": [
+        {
+          "ts": "2026-04-24T12:47:45.758275+00:00",
+          "event": "proposed",
+          "by": "Opus",
+          "note": "parity-first restructure 2026-04-24"
+        }
+      ]
+    },
+    {
+      "id": "ALPACA_PAIR_STATUS",
+      "title": "Alpaca pair_status.json read path",
+      "priority": 4,
+      "status": "pending_approval",
+      "approved_in_principle": true,
+      "gate": "A1+A2 shipped",
+      "target_window": "2026-04-25 08:00 ET",
+      "est_build_time": "1h",
+      "expected_protection_usd_per_week": [
+        0,
+        0
+      ],
+      "expected_pnl_improvement_usd_per_week": [
+        0,
+        0
+      ],
+      "exit_condition": "n/a",
+      "files_touched": [
+        "alpacabot/alpaca_engine.py"
+      ],
+      "depends_on": [
+        "ALPACA_EXIT_LEDGER",
+        "ALPACA_STATE_SCHEMA_UNIFY"
+      ],
+      "mechanism": "Mirror enzobot _apply_pair_status. TTL-bounded reversion.",
+      "history": [
+        {
+          "ts": "2026-04-24T12:47:45.758276+00:00",
+          "event": "proposed",
+          "by": "Opus",
+          "note": "parity-first restructure 2026-04-24"
+        }
+      ]
+    },
+    {
+      "id": "ALPACA_SENTINEL_OVERRIDE_READ",
+      "title": "Alpaca sentinel_override.json read path",
+      "priority": 5,
+      "status": "pending_approval",
+      "approved_in_principle": true,
+      "gate": "ALPACA_PAIR_STATUS shipped",
+      "target_window": "2026-04-25 08:00 ET",
+      "est_build_time": "1h",
+      "expected_protection_usd_per_week": [
+        0,
+        0
+      ],
+      "expected_pnl_improvement_usd_per_week": [
+        0,
+        0
+      ],
+      "exit_condition": "n/a",
+      "files_touched": [
+        "alpacabot/alpaca_engine.py"
+      ],
+      "depends_on": [
+        "ALPACA_PAIR_STATUS"
+      ],
+      "mechanism": "Mirror enzobot _apply_sentinel_override. Layered on alpaca_brain_overrides.",
+      "history": [
+        {
+          "ts": "2026-04-24T12:47:45.758277+00:00",
+          "event": "proposed",
+          "by": "Opus",
+          "note": "parity-first restructure 2026-04-24"
+        }
+      ]
+    },
+    {
+      "id": "ALPACA_PARAM_BOUNDS_EXPAND",
+      "title": "Expand ALPACA PARAM_BOUNDS",
+      "priority": 6,
+      "status": "pending_approval",
+      "approved_in_principle": true,
+      "gate": "ALPACA_SENTINEL_OVERRIDE_READ shipped",
+      "target_window": "2026-04-25 20:00 ET",
+      "est_build_time": "30m",
+      "expected_protection_usd_per_week": [
+        0,
+        0
+      ],
+      "expected_pnl_improvement_usd_per_week": [
+        0,
+        0
+      ],
+      "exit_condition": "n/a",
+      "files_touched": [
+        "alpacabot/alpaca_brain.py"
+      ],
+      "depends_on": [
+        "ALPACA_SENTINEL_OVERRIDE_READ"
+      ],
+      "mechanism": "Add MIN_SCORE_TO_TRADE, ROTATE_MIN_PNL_PCT, TIME_STOP_SEC, MIN_HOLD_SEC, TARGET_DEPLOY_PCT.",
+      "history": [
+        {
+          "ts": "2026-04-24T12:47:45.758278+00:00",
+          "event": "proposed",
+          "by": "Opus",
+          "note": "parity-first restructure 2026-04-24"
+        }
+      ]
+    },
+    {
+      "id": "ALPACA_SENTINEL_TRIGGERS",
+      "title": "Alpaca sentinel triggers (B2/B4/B6/B12 adapted)",
+      "priority": 7,
+      "status": "pending_approval",
+      "approved_in_principle": true,
+      "gate": "All foundation pieces shipped",
+      "target_window": "2026-04-26 08:00 ET",
+      "est_build_time": "2h",
+      "expected_protection_usd_per_week": [
+        5,
+        15
+      ],
+      "expected_pnl_improvement_usd_per_week": [
+        5,
+        10
+      ],
+      "exit_condition": "7d attribution gate, L1 freeze on 2 HURT",
+      "files_touched": [
+        "supervisor/opus_sentinel.py"
+      ],
+      "depends_on": [
+        "ALPACA_EXIT_LEDGER",
+        "ALPACA_SENTINEL_OVERRIDE_READ",
+        "ALPACA_PAIR_STATUS",
+        "ALPACA_PARAM_BOUNDS_EXPAND"
+      ],
+      "mechanism": "Adapted B2/B4/B6/B12 functions for Alpaca. Sentinel watches 2 sleeves.",
+      "history": [
+        {
+          "ts": "2026-04-24T12:47:45.758279+00:00",
+          "event": "proposed",
+          "by": "Opus",
+          "note": "parity-first restructure 2026-04-24"
+        }
+      ]
+    },
+    {
+      "id": "ALPACA_MARKET_SENSE",
+      "title": "alpaca_market_sense.py",
+      "priority": 8,
+      "status": "pending_approval",
+      "approved_in_principle": true,
+      "gate": "ALPACA_SENTINEL_TRIGGERS shipped",
+      "target_window": "2026-04-26 20:00 ET",
+      "est_build_time": "2h",
+      "expected_protection_usd_per_week": [
+        5,
+        10
+      ],
+      "expected_pnl_improvement_usd_per_week": [
+        5,
+        10
+      ],
+      "exit_condition": "false-positive rate > 50% reconsider",
+      "files_touched": [
+        "alpacabot/alpaca_market_sense.py (new)",
+        "alpacabot/alpaca_engine.py"
+      ],
+      "depends_on": [
+        "ALPACA_SENTINEL_TRIGGERS"
+      ],
+      "mechanism": "Market-hours gate, lunch chop block, earnings avoidance, SPY drift. Subsumes ALPACA_LUNCH_GATE.",
+      "history": [
+        {
+          "ts": "2026-04-24T12:47:45.758280+00:00",
+          "event": "proposed",
+          "by": "Opus",
+          "note": "parity-first restructure 2026-04-24"
+        }
+      ]
+    },
+    {
+      "id": "AUTONOMY_GUARD_CLOCK_AWARE",
+      "title": "Make autonomy_guard market-hours-aware",
+      "priority": 9,
+      "status": "pending_approval",
+      "approved_in_principle": true,
+      "gate": "ALPACA_SENTINEL_TRIGGERS shipped",
+      "target_window": "2026-04-27 08:00 ET",
+      "est_build_time": "1h",
+      "expected_protection_usd_per_week": [
+        0,
+        0
+      ],
+      "expected_pnl_improvement_usd_per_week": [
+        0,
+        0
+      ],
+      "exit_condition": "n/a",
+      "files_touched": [
+        "supervisor/autonomy_guard.py"
+      ],
+      "depends_on": [
+        "ALPACA_SENTINEL_TRIGGERS"
+      ],
+      "mechanism": "B6-style triggers skip market-closed hours for Alpaca (9:30-16:00 Mon-Fri). Kraken/Solana wall clock.",
+      "history": [
+        {
+          "ts": "2026-04-24T12:47:45.758280+00:00",
+          "event": "proposed",
+          "by": "Opus",
+          "note": "parity-first restructure 2026-04-24"
+        }
+      ]
+    },
+    {
+      "id": "SOLANA_RECAP_DECISION",
+      "title": "Operator decision: Solana sleeve recap + new pair",
+      "priority": 30,
+      "status": "pending_approval",
+      "approved_in_principle": false,
+      "gate": "Operator call at brief",
+      "target_window": "operator-decided",
+      "est_build_time": "0m",
+      "expected_protection_usd_per_week": [
+        0,
+        0
+      ],
+      "expected_pnl_improvement_usd_per_week": [
+        0,
+        0
+      ],
+      "exit_condition": "operator call",
+      "files_touched": [],
+      "depends_on": [],
+      "mechanism": "Gate for entire Phase B. SFM dormant at $6.23. Options: (a) recap+liquid pair, (b) recap to new token, (c) keep dormant.",
+      "history": [
+        {
+          "ts": "2026-04-24T12:47:45.758281+00:00",
+          "event": "proposed",
+          "by": "Opus",
+          "note": "parity-first restructure 2026-04-24"
+        }
+      ]
+    },
+    {
+      "id": "SOLANA_EXIT_LEDGER",
+      "title": "Solana exit counterfactuals ledger",
+      "priority": 31,
+      "status": "pending_approval",
+      "approved_in_principle": true,
+      "gate": "SOLANA_RECAP_DECISION resolved",
+      "target_window": "after recap",
+      "est_build_time": "1h",
+      "expected_protection_usd_per_week": [
+        0,
+        0
+      ],
+      "expected_pnl_improvement_usd_per_week": [
+        0,
+        0
+      ],
+      "exit_condition": "n/a",
+      "files_touched": [
+        "sfmbot/sfm_engine.py"
+      ],
+      "depends_on": [
+        "SOLANA_RECAP_DECISION"
+      ],
+      "mechanism": "Mirror alpaca/enzobot ledger.",
+      "history": [
+        {
+          "ts": "2026-04-24T12:47:45.758282+00:00",
+          "event": "proposed",
+          "by": "Opus",
+          "note": "parity-first restructure 2026-04-24"
+        }
+      ]
+    },
+    {
+      "id": "SOLANA_STATE_SCHEMA_UNIFY",
+      "title": "Unify sfm/solana state schema",
+      "priority": 32,
+      "status": "pending_approval",
+      "approved_in_principle": true,
+      "gate": "SOLANA_RECAP_DECISION resolved",
+      "target_window": "after recap",
+      "est_build_time": "30m",
+      "expected_protection_usd_per_week": [
+        0,
+        0
+      ],
+      "expected_pnl_improvement_usd_per_week": [
+        0,
+        0
+      ],
+      "exit_condition": "n/a",
+      "files_touched": [
+        "sfmbot/sfm_state.py"
+      ],
+      "depends_on": [
+        "SOLANA_RECAP_DECISION"
+      ],
+      "mechanism": "Canonical fields.",
+      "history": [
+        {
+          "ts": "2026-04-24T12:47:45.758282+00:00",
+          "event": "proposed",
+          "by": "Opus",
+          "note": "parity-first restructure 2026-04-24"
+        }
+      ]
+    },
+    {
+      "id": "SOLANA_PAIR_STATUS",
+      "title": "Solana pair_status.json read path",
+      "priority": 33,
+      "status": "pending_approval",
+      "approved_in_principle": true,
+      "gate": "SOLANA_EXIT_LEDGER+SCHEMA shipped",
+      "target_window": "after recap",
+      "est_build_time": "1h",
+      "expected_protection_usd_per_week": [
+        0,
+        0
+      ],
+      "expected_pnl_improvement_usd_per_week": [
+        0,
+        0
+      ],
+      "exit_condition": "n/a",
+      "files_touched": [
+        "sfmbot/sfm_engine.py"
+      ],
+      "depends_on": [
+        "SOLANA_EXIT_LEDGER",
+        "SOLANA_STATE_SCHEMA_UNIFY"
+      ],
+      "mechanism": "Mirror enzobot.",
+      "history": [
+        {
+          "ts": "2026-04-24T12:47:45.758283+00:00",
+          "event": "proposed",
+          "by": "Opus",
+          "note": "parity-first restructure 2026-04-24"
+        }
+      ]
+    },
+    {
+      "id": "SOLANA_SENTINEL_OVERRIDE_READ",
+      "title": "Solana sentinel_override.json read path",
+      "priority": 34,
+      "status": "pending_approval",
+      "approved_in_principle": true,
+      "gate": "SOLANA_PAIR_STATUS shipped",
+      "target_window": "after recap",
+      "est_build_time": "1h",
+      "expected_protection_usd_per_week": [
+        0,
+        0
+      ],
+      "expected_pnl_improvement_usd_per_week": [
+        0,
+        0
+      ],
+      "exit_condition": "n/a",
+      "files_touched": [
+        "sfmbot/sfm_engine.py"
+      ],
+      "depends_on": [
+        "SOLANA_PAIR_STATUS"
+      ],
+      "mechanism": "Mirror enzobot.",
+      "history": [
+        {
+          "ts": "2026-04-24T12:47:45.758284+00:00",
+          "event": "proposed",
+          "by": "Opus",
+          "note": "parity-first restructure 2026-04-24"
+        }
+      ]
+    },
+    {
+      "id": "SOLANA_PARAM_BOUNDS_EXPAND",
+      "title": "Expand SOLANA PARAM_BOUNDS",
+      "priority": 35,
+      "status": "pending_approval",
+      "approved_in_principle": true,
+      "gate": "SOLANA_SENTINEL_OVERRIDE_READ shipped",
+      "target_window": "after recap",
+      "est_build_time": "30m",
+      "expected_protection_usd_per_week": [
+        0,
+        0
+      ],
+      "expected_pnl_improvement_usd_per_week": [
+        0,
+        0
+      ],
+      "exit_condition": "n/a",
+      "files_touched": [
+        "sfmbot/sfm_brain.py"
+      ],
+      "depends_on": [
+        "SOLANA_SENTINEL_OVERRIDE_READ"
+      ],
+      "mechanism": "MIN_SCORE_TO_TRADE, ROTATE, TIME_STOP, etc. Volatile crypto magnitudes.",
+      "history": [
+        {
+          "ts": "2026-04-24T12:47:45.758285+00:00",
+          "event": "proposed",
+          "by": "Opus",
+          "note": "parity-first restructure 2026-04-24"
+        }
+      ]
+    },
+    {
+      "id": "SOLANA_SENTINEL_TRIGGERS",
+      "title": "Solana sentinel triggers",
+      "priority": 36,
+      "status": "pending_approval",
+      "approved_in_principle": true,
+      "gate": "All Solana foundation shipped",
+      "target_window": "after recap",
+      "est_build_time": "2h",
+      "expected_protection_usd_per_week": [
+        5,
+        15
+      ],
+      "expected_pnl_improvement_usd_per_week": [
+        0,
+        5
+      ],
+      "exit_condition": "7d attribution",
+      "files_touched": [
+        "supervisor/opus_sentinel.py"
+      ],
+      "depends_on": [
+        "SOLANA_EXIT_LEDGER",
+        "SOLANA_SENTINEL_OVERRIDE_READ",
+        "SOLANA_PAIR_STATUS",
+        "SOLANA_PARAM_BOUNDS_EXPAND"
+      ],
+      "mechanism": "Sentinel watches 3rd sleeve.",
+      "history": [
+        {
+          "ts": "2026-04-24T12:47:45.758286+00:00",
+          "event": "proposed",
+          "by": "Opus",
+          "note": "parity-first restructure 2026-04-24"
+        }
+      ]
+    },
+    {
+      "id": "SOLANA_MARKET_SENSE",
+      "title": "solana_market_sense.py (slippage + pool + gas)",
+      "priority": 37,
+      "status": "pending_approval",
+      "approved_in_principle": true,
+      "gate": "SOLANA_SENTINEL_TRIGGERS shipped",
+      "target_window": "after recap",
+      "est_build_time": "3h",
+      "expected_protection_usd_per_week": [
+        10,
+        30
+      ],
+      "expected_pnl_improvement_usd_per_week": [
+        0,
+        10
+      ],
+      "exit_condition": "slippage gate FP rate > 30% reconsider",
+      "files_touched": [
+        "sfmbot/solana_market_sense.py (new)",
+        "sfmbot/sfm_engine.py"
+      ],
+      "depends_on": [
+        "SOLANA_SENTINEL_TRIGGERS"
+      ],
+      "mechanism": "Slippage gate 3%, pool liquidity floor $50k, SOL gas monitor, rug-pull signal, Jupiter/Raydium route selection.",
+      "history": [
+        {
+          "ts": "2026-04-24T12:47:45.758286+00:00",
+          "event": "proposed",
+          "by": "Opus",
+          "note": "parity-first restructure 2026-04-24"
+        }
+      ]
+    },
+    {
+      "id": "SOLANA_RPC_HEALTH",
+      "title": "Solana RPC health + failover",
+      "priority": 38,
+      "status": "pending_approval",
+      "approved_in_principle": true,
+      "gate": "SOLANA_MARKET_SENSE shipped",
+      "target_window": "after recap",
+      "est_build_time": "2h",
+      "expected_protection_usd_per_week": [
+        0,
+        10
+      ],
+      "expected_pnl_improvement_usd_per_week": [
+        0,
+        0
+      ],
+      "exit_condition": "n/a",
+      "files_touched": [
+        "sfmbot/solana_client.py"
+      ],
+      "depends_on": [
+        "SOLANA_MARKET_SENSE"
+      ],
+      "mechanism": "p95 latency monitor, retry secondary RPC, skip cycle if degraded.",
+      "history": [
+        {
+          "ts": "2026-04-24T12:47:45.758287+00:00",
+          "event": "proposed",
+          "by": "Opus",
+          "note": "parity-first restructure 2026-04-24"
+        }
+      ]
+    },
+    {
+      "id": "SLEEVE_FRAMEWORK_REFACTOR",
+      "title": "Phase C: sleeve_framework.py abstract base",
+      "priority": 50,
+      "status": "deferred",
+      "approved_in_principle": true,
+      "gate": "Phase A+B shipped + >1 week clean",
+      "target_window": "2026-05-15 or later",
+      "est_build_time": "12h",
+      "expected_protection_usd_per_week": [
+        0,
+        0
+      ],
+      "expected_pnl_improvement_usd_per_week": [
+        0,
+        0
+      ],
+      "exit_condition": "n/a",
+      "files_touched": [
+        "supervisor/sleeve_framework.py (new)",
+        "enzobot/engine.py",
+        "alpacabot/alpaca_engine.py",
+        "sfmbot/sfm_engine.py",
+        "supervisor/opus_sentinel.py"
+      ],
+      "depends_on": [
+        "ALPACA_MARKET_SENSE",
+        "SOLANA_MARKET_SENSE"
+      ],
+      "mechanism": "Abstract base class. Each sleeve implements interface. Sentinel calls framework. Pure refactor.",
+      "history": [
+        {
+          "ts": "2026-04-24T12:47:45.758288+00:00",
+          "event": "proposed",
+          "by": "Opus",
+          "note": "parity-first restructure 2026-04-24"
+        }
+      ]
     }
   ]
 }

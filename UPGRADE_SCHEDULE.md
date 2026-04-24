@@ -1,10 +1,10 @@
 # Upgrade Schedule
 
-_Last update: 2026-04-23T21:40:00Z_
+_Last update: 2026-04-24T12:47:45.758289+00:00_
 
 Source of truth: `autonomy_schedule.json`. Updated by Opus on ship/revert, surfaced in 08:00 AM / 08:00 PM operator packets.
 
-## ⏸ Pending approval
+## 🟢 Live (measuring outcomes)
 
 ### B12 · Loss-streak universe pause (priority 1)
 
@@ -17,7 +17,110 @@ Source of truth: `autonomy_schedule.json`. Updated by Opus on ship/revert, surfa
 - **Files:** supervisor/opus_sentinel.py
 - **Mechanism:** 5 consec universe losses → sentinel_override: TARGET_DEPLOY_PCT=0.25 + MIN_SCORE_TO_TRADE=88 for 2h TTL; pair_status COOLDOWN on last losing pair 4h TTL
 
-### BTC_DOM_GATE · BTC dominance gate for Kraken alts (priority 2)
+
+## ⏸ Pending approval
+
+### ALPACA_EXIT_LEDGER · Alpaca exit counterfactuals ledger (priority 2)
+
+- **Gate:** Next window; operator green-light
+- **Target window:** 2026-04-24 20:00 ET
+- **Est build time:** 1h
+- **Exit condition:** n/a - foundation
+- **Files:** alpacabot/alpaca_engine.py
+- **Mechanism:** Write {ts,pair,side,entry_px,exit_px,qty,pnl_usd,exit_reason,hold_sec,regime_at_entry,regime_at_exit,score_at_entry} to alpaca_exit_counterfactuals.jsonl on every exit.
+
+### ALPACA_STATE_SCHEMA_UNIFY · Unify alpaca_state.json field names (priority 3)
+
+- **Gate:** Same window
+- **Target window:** 2026-04-24 20:00 ET
+- **Est build time:** 30m
+- **Exit condition:** n/a
+- **Files:** alpacabot/alpaca_state.py
+- **Mechanism:** Add canonical equity_usd, realized_pnl_usd, unrealized_pnl_usd, dd_pct, peak_equity_usd fields. Keep aliases.
+
+### ALPACA_PAIR_STATUS · Alpaca pair_status.json read path (priority 4)
+
+- **Gate:** A1+A2 shipped
+- **Target window:** 2026-04-25 08:00 ET
+- **Est build time:** 1h
+- **Exit condition:** n/a
+- **Files:** alpacabot/alpaca_engine.py
+- **Depends on:** ALPACA_EXIT_LEDGER, ALPACA_STATE_SCHEMA_UNIFY
+- **Mechanism:** Mirror enzobot _apply_pair_status. TTL-bounded reversion.
+
+### ALPACA_SENTINEL_OVERRIDE_READ · Alpaca sentinel_override.json read path (priority 5)
+
+- **Gate:** ALPACA_PAIR_STATUS shipped
+- **Target window:** 2026-04-25 08:00 ET
+- **Est build time:** 1h
+- **Exit condition:** n/a
+- **Files:** alpacabot/alpaca_engine.py
+- **Depends on:** ALPACA_PAIR_STATUS
+- **Mechanism:** Mirror enzobot _apply_sentinel_override. Layered on alpaca_brain_overrides.
+
+### ALPACA_PARAM_BOUNDS_EXPAND · Expand ALPACA PARAM_BOUNDS (priority 6)
+
+- **Gate:** ALPACA_SENTINEL_OVERRIDE_READ shipped
+- **Target window:** 2026-04-25 20:00 ET
+- **Est build time:** 30m
+- **Exit condition:** n/a
+- **Files:** alpacabot/alpaca_brain.py
+- **Depends on:** ALPACA_SENTINEL_OVERRIDE_READ
+- **Mechanism:** Add MIN_SCORE_TO_TRADE, ROTATE_MIN_PNL_PCT, TIME_STOP_SEC, MIN_HOLD_SEC, TARGET_DEPLOY_PCT.
+
+### ALPACA_SENTINEL_TRIGGERS · Alpaca sentinel triggers (B2/B4/B6/B12 adapted) (priority 7)
+
+- **Gate:** All foundation pieces shipped
+- **Target window:** 2026-04-26 08:00 ET
+- **Est build time:** 2h
+- **Expected protection:** ~$5-15/week
+- **Expected PnL lift:** ~$5-10/week
+- **Exit condition:** 7d attribution gate, L1 freeze on 2 HURT
+- **Files:** supervisor/opus_sentinel.py
+- **Depends on:** ALPACA_EXIT_LEDGER, ALPACA_SENTINEL_OVERRIDE_READ, ALPACA_PAIR_STATUS, ALPACA_PARAM_BOUNDS_EXPAND
+- **Mechanism:** Adapted B2/B4/B6/B12 functions for Alpaca. Sentinel watches 2 sleeves.
+
+### ALPACA_MARKET_SENSE · alpaca_market_sense.py (priority 8)
+
+- **Gate:** ALPACA_SENTINEL_TRIGGERS shipped
+- **Target window:** 2026-04-26 20:00 ET
+- **Est build time:** 2h
+- **Expected protection:** ~$5-10/week
+- **Expected PnL lift:** ~$5-10/week
+- **Exit condition:** false-positive rate > 50% reconsider
+- **Files:** alpacabot/alpaca_market_sense.py (new), alpacabot/alpaca_engine.py
+- **Depends on:** ALPACA_SENTINEL_TRIGGERS
+- **Mechanism:** Market-hours gate, lunch chop block, earnings avoidance, SPY drift. Subsumes ALPACA_LUNCH_GATE.
+
+### AUTONOMY_GUARD_CLOCK_AWARE · Make autonomy_guard market-hours-aware (priority 9)
+
+- **Gate:** ALPACA_SENTINEL_TRIGGERS shipped
+- **Target window:** 2026-04-27 08:00 ET
+- **Est build time:** 1h
+- **Exit condition:** n/a
+- **Files:** supervisor/autonomy_guard.py
+- **Depends on:** ALPACA_SENTINEL_TRIGGERS
+- **Mechanism:** B6-style triggers skip market-closed hours for Alpaca (9:30-16:00 Mon-Fri). Kraken/Solana wall clock.
+
+### COSMETIC_META_KEY · Skip _meta key in pair_status reader (cosmetic) (priority 11)
+
+- **Gate:** Trivial 2-line fix during next maintenance window. Operator ack at 8 AM brief.
+- **Target window:** 2026-04-24 08:00 ET
+- **Est build time:** 5m
+- **Exit condition:** n/a — cosmetic only
+- **Files:** enzobot/engine.py
+- **Mechanism:** In _apply_pair_status: if pair.startswith('_'): continue. Skips _meta log noise.
+
+### REVIEW_ISSUE_PARSER · Fix opus_review.py open-issue counter + parser (priority 12)
+
+- **Gate:** Trivial parser fix. Non-blocking. Operator ack at 8 AM.
+- **Target window:** 2026-04-24 08:00 ET
+- **Est build time:** 15m
+- **Exit condition:** n/a — reporting only
+- **Files:** supervisor/opus_review.py
+- **Mechanism:** Filter issues.jsonl by open state (not closed) + parse early-format records cleanly. Eliminates '[?] ?' rows.
+
+### BTC_DOM_GATE · BTC dominance gate for Kraken alts (priority 20)
 
 - **Gate:** B12 validated clean for 24h + operator green-light at 8 AM or 8 PM brief
 - **Target window:** 2026-04-24 20:00 ET or later
@@ -29,7 +132,7 @@ Source of truth: `autonomy_schedule.json`. Updated by Opus on ship/revert, surfa
 - **Depends on:** B12
 - **Mechanism:** If BTC 7d trend < 3% OR BTC 24h range < 1.5%, sentinel raises Kraken alt MIN_SCORE_TO_TRADE to 85 (6h TTL, refresh while condition persists). BTC/USD pair exempt.
 
-### POST_FLIP_COOLDOWN · Post-regime-flip observation cooldown (priority 3)
+### POST_FLIP_COOLDOWN · Post-regime-flip observation cooldown (priority 21)
 
 - **Gate:** B12 + BTC_DOM_GATE both validated clean + operator green-light
 - **Target window:** 2026-04-25 08:00 ET or later
@@ -41,28 +144,104 @@ Source of truth: `autonomy_schedule.json`. Updated by Opus on ship/revert, surfa
 - **Depends on:** B12, BTC_DOM_GATE
 - **Mechanism:** On regime change, governor forces SCOUT mode with entry_allowed=false for 1h regardless of flip direction. Kernel HALT overrides (can't block flatten).
 
-### COSMETIC_META_KEY · Skip _meta key in pair_status reader (cosmetic) (priority 10)
+### SOLANA_RECAP_DECISION · Operator decision: Solana sleeve recap + new pair (priority 30)
 
-- **Gate:** Trivial 2-line fix during next maintenance window. Operator ack at 8 AM brief.
-- **Target window:** 2026-04-24 08:00 ET
-- **Est build time:** 5m
-- **Exit condition:** n/a — cosmetic only
-- **Files:** enzobot/engine.py
-- **Mechanism:** In _apply_pair_status: if pair.startswith('_'): continue. Skips _meta log noise.
+- **Gate:** Operator call at brief
+- **Target window:** operator-decided
+- **Est build time:** 0m
+- **Exit condition:** operator call
+- **Files:** —
+- **Mechanism:** Gate for entire Phase B. SFM dormant at $6.23. Options: (a) recap+liquid pair, (b) recap to new token, (c) keep dormant.
 
-### REVIEW_ISSUE_PARSER · Fix opus_review.py open-issue counter + parser (priority 11)
+### SOLANA_EXIT_LEDGER · Solana exit counterfactuals ledger (priority 31)
 
-- **Gate:** Trivial parser fix. Non-blocking. Operator ack at 8 AM.
-- **Target window:** 2026-04-24 08:00 ET
-- **Est build time:** 15m
-- **Exit condition:** n/a — reporting only
-- **Files:** supervisor/opus_review.py
-- **Mechanism:** Filter issues.jsonl by open state (not closed) + parse early-format records cleanly. Eliminates '[?] ?' rows.
+- **Gate:** SOLANA_RECAP_DECISION resolved
+- **Target window:** after recap
+- **Est build time:** 1h
+- **Exit condition:** n/a
+- **Files:** sfmbot/sfm_engine.py
+- **Depends on:** SOLANA_RECAP_DECISION
+- **Mechanism:** Mirror alpaca/enzobot ledger.
+
+### SOLANA_STATE_SCHEMA_UNIFY · Unify sfm/solana state schema (priority 32)
+
+- **Gate:** SOLANA_RECAP_DECISION resolved
+- **Target window:** after recap
+- **Est build time:** 30m
+- **Exit condition:** n/a
+- **Files:** sfmbot/sfm_state.py
+- **Depends on:** SOLANA_RECAP_DECISION
+- **Mechanism:** Canonical fields.
+
+### SOLANA_PAIR_STATUS · Solana pair_status.json read path (priority 33)
+
+- **Gate:** SOLANA_EXIT_LEDGER+SCHEMA shipped
+- **Target window:** after recap
+- **Est build time:** 1h
+- **Exit condition:** n/a
+- **Files:** sfmbot/sfm_engine.py
+- **Depends on:** SOLANA_EXIT_LEDGER, SOLANA_STATE_SCHEMA_UNIFY
+- **Mechanism:** Mirror enzobot.
+
+### SOLANA_SENTINEL_OVERRIDE_READ · Solana sentinel_override.json read path (priority 34)
+
+- **Gate:** SOLANA_PAIR_STATUS shipped
+- **Target window:** after recap
+- **Est build time:** 1h
+- **Exit condition:** n/a
+- **Files:** sfmbot/sfm_engine.py
+- **Depends on:** SOLANA_PAIR_STATUS
+- **Mechanism:** Mirror enzobot.
+
+### SOLANA_PARAM_BOUNDS_EXPAND · Expand SOLANA PARAM_BOUNDS (priority 35)
+
+- **Gate:** SOLANA_SENTINEL_OVERRIDE_READ shipped
+- **Target window:** after recap
+- **Est build time:** 30m
+- **Exit condition:** n/a
+- **Files:** sfmbot/sfm_brain.py
+- **Depends on:** SOLANA_SENTINEL_OVERRIDE_READ
+- **Mechanism:** MIN_SCORE_TO_TRADE, ROTATE, TIME_STOP, etc. Volatile crypto magnitudes.
+
+### SOLANA_SENTINEL_TRIGGERS · Solana sentinel triggers (priority 36)
+
+- **Gate:** All Solana foundation shipped
+- **Target window:** after recap
+- **Est build time:** 2h
+- **Expected protection:** ~$5-15/week
+- **Expected PnL lift:** ~$0-5/week
+- **Exit condition:** 7d attribution
+- **Files:** supervisor/opus_sentinel.py
+- **Depends on:** SOLANA_EXIT_LEDGER, SOLANA_SENTINEL_OVERRIDE_READ, SOLANA_PAIR_STATUS, SOLANA_PARAM_BOUNDS_EXPAND
+- **Mechanism:** Sentinel watches 3rd sleeve.
+
+### SOLANA_MARKET_SENSE · solana_market_sense.py (slippage + pool + gas) (priority 37)
+
+- **Gate:** SOLANA_SENTINEL_TRIGGERS shipped
+- **Target window:** after recap
+- **Est build time:** 3h
+- **Expected protection:** ~$10-30/week
+- **Expected PnL lift:** ~$0-10/week
+- **Exit condition:** slippage gate FP rate > 30% reconsider
+- **Files:** sfmbot/solana_market_sense.py (new), sfmbot/sfm_engine.py
+- **Depends on:** SOLANA_SENTINEL_TRIGGERS
+- **Mechanism:** Slippage gate 3%, pool liquidity floor $50k, SOL gas monitor, rug-pull signal, Jupiter/Raydium route selection.
+
+### SOLANA_RPC_HEALTH · Solana RPC health + failover (priority 38)
+
+- **Gate:** SOLANA_MARKET_SENSE shipped
+- **Target window:** after recap
+- **Est build time:** 2h
+- **Expected protection:** ~$0-10/week
+- **Exit condition:** n/a
+- **Files:** sfmbot/solana_client.py
+- **Depends on:** SOLANA_MARKET_SENSE
+- **Mechanism:** p95 latency monitor, retry secondary RPC, skip cycle if degraded.
 
 
 ## 🗂 Deferred
 
-### SHADOW_BASELINE · Shadow baseline counterfactual (priority 20)
+### SHADOW_BASELINE · Shadow baseline counterfactual (priority 40)
 
 - **Gate:** 2 weeks of tuning_outcomes.jsonl data accumulated
 - **Target window:** 2026-05-07 or later
@@ -72,7 +251,7 @@ Source of truth: `autonomy_schedule.json`. Updated by Opus on ship/revert, surfa
 - **Depends on:** B12, BTC_DOM_GATE
 - **Mechanism:** Run shadow param set (operator baseline) against same market ticks. Weekly compare live-vs-shadow PnL. If shadow beats live trailing-7d → auto-revert to baseline + operator flag.
 
-### CALIBRATION_TRACKER · Calibration tracker (metacognition) (priority 21)
+### CALIBRATION_TRACKER · Calibration tracker (metacognition) (priority 41)
 
 - **Gate:** 30 days of verdict data. Start collecting now; build later.
 - **Target window:** 2026-05-23 or later
@@ -82,7 +261,17 @@ Source of truth: `autonomy_schedule.json`. Updated by Opus on ship/revert, surfa
 - **Depends on:** B12
 - **Mechanism:** Compare expected_impact_usd (pre-write) vs realized 6h delta. If 30d calibration <55% correct direction → halve adjustment magnitudes autonomously.
 
-### ALPACA_LUNCH_GATE · Alpaca lunch-hour entry block (priority 30)
+### SLEEVE_FRAMEWORK_REFACTOR · Phase C: sleeve_framework.py abstract base (priority 50)
+
+- **Gate:** Phase A+B shipped + >1 week clean
+- **Target window:** 2026-05-15 or later
+- **Est build time:** 12h
+- **Exit condition:** n/a
+- **Files:** supervisor/sleeve_framework.py (new), enzobot/engine.py, alpacabot/alpaca_engine.py, sfmbot/sfm_engine.py, supervisor/opus_sentinel.py
+- **Depends on:** ALPACA_MARKET_SENSE, SOLANA_MARKET_SENSE
+- **Mechanism:** Abstract base class. Each sleeve implements interface. Sentinel calls framework. Pure refactor.
+
+### ALPACA_LUNCH_GATE · Alpaca lunch-hour entry block (priority 100)
 
 - **Gate:** Alpaca shows mid-day loss evidence (currently 5/5 clean — no signal)
 - **Target window:** on evidence
@@ -91,7 +280,7 @@ Source of truth: `autonomy_schedule.json`. Updated by Opus on ship/revert, surfa
 - **Files:** alpacabot/alpaca_engine.py
 - **Mechanism:** Block new alpaca entries 11:30-13:30 ET.
 
-### WEEKEND_KRAKEN_GATE · Weekend Kraken posture gate (priority 31)
+### WEEKEND_KRAKEN_GATE · Weekend Kraken posture gate (priority 101)
 
 - **Gate:** Weekend PnL data shows worse edge than weekdays
 - **Target window:** on evidence
@@ -100,7 +289,7 @@ Source of truth: `autonomy_schedule.json`. Updated by Opus on ship/revert, surfa
 - **Files:** supervisor/supervisor_governor.py
 - **Mechanism:** Force SCOUT Fri 17:00 ET → Sun 18:00 ET unless BTC 24h range > 1.5%.
 
-### UNIVERSE_PRUNING · Pair-level universe pruning (autonomous DISABLED_SOFT) (priority 32)
+### UNIVERSE_PRUNING · Pair-level universe pruning (autonomous DISABLED_SOFT) (priority 102)
 
 - **Gate:** 4+ weeks of per-pair PnL attribution data
 - **Target window:** 2026-05-23 or later
@@ -113,4 +302,4 @@ Source of truth: `autonomy_schedule.json`. Updated by Opus on ship/revert, surfa
 
 ---
 
-**Next up:** `B12` — Loss-streak universe pause
+**Next up:** `ALPACA_EXIT_LEDGER` — Alpaca exit counterfactuals ledger
