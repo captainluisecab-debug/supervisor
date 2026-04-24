@@ -34,6 +34,16 @@ logging.basicConfig(
 log = logging.getLogger("opus_sentinel")
 
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
+
+# Autonomy guard — pre-write safety checks + post-write outcome attribution
+try:
+    from autonomy_guard import pre_write_check as _ag_pre_write_check
+    from autonomy_guard import record_write as _ag_record_write
+except Exception as _ag_exc:
+    logging.getLogger("opus_sentinel").warning(
+        "autonomy_guard import failed, guards disabled: %s", _ag_exc)
+    _ag_pre_write_check = None
+    _ag_record_write = None
 ENZOBOT_DIR = r"C:\Projects\enzobot"
 ALPACA_DIR = r"C:\Projects\alpacabot"
 SFMBOT_DIR = r"C:\Projects\sfmbot"
@@ -677,23 +687,22 @@ ISSUE_TEMPLATES = {
 
 
 def _write_sentinel_override(changes: dict, reason: str, ttl_sec: int = 7200,
-                              blocked_pairs: Optional[list] = None) -> bool:
+                              blocked_pairs: Optional[list] = None,
+                              trigger: str = "",
+                              bot: str = "kraken") -> bool:
     """Write sentinel_override.json at enzobot side. Engine layers this on
     top of Brain's supervisor_override.json (sentinel wins when both fire).
     TTL ensures the override self-expires if sentinel stops writing.
 
-    changes: dict of {POLICY_KEY: new_value}. Validated against policy
-             hard_bounds before write. Out-of-bounds entries are dropped.
-    reason:  human-readable reason string.
-    ttl_sec: seconds from now until override expires.
-    blocked_pairs: optional list of pair names to add to blocked_pairs.
-    Returns True if a write happened, False if nothing applicable.
+    All writes go through autonomy_guard.pre_write_check — rate-limit,
+    oscillation, regime stability, attribution, circuit-breaker freezes.
     """
     # Load policy bounds for validation — same bounds brain uses
     policy = _read_json(ENZOBOT_POLICY)
     bounds = policy.get("hard_bounds", {})
 
     validated = {}
+    before_values = {}
     for k, v in (changes or {}).items():
         if k not in bounds:
             log.warning("sentinel override skipped %s=%s (not in hard_bounds)", k, v)
@@ -711,12 +720,56 @@ def _write_sentinel_override(changes: dict, reason: str, ttl_sec: int = 7200,
     if not validated and not blocked_pairs:
         return False
 
+    # Read current live values (for before-state attribution)
+    try:
+        _state = _read_json(ENZOBOT_STATE) or {}
+        _equity = float(_state.get("equity_usd") or _state.get("portfolio_equity_usd") or 0.0)
+        _realized_pnl = float(_state.get("realized_pnl_usd", 0.0))
+        _regime = None
+        _feedback = _read_json(ENZOBOT_FEEDBACK) or {}
+        _regime = _feedback.get("regime") or _feedback.get("dominant_regime")
+    except Exception:
+        _equity, _realized_pnl, _regime = 0.0, 0.0, None
+
+    # For attribution in autonomy_guard: treat sentinel emergency triggers
+    # (B2/B4/B6) as attribution-bypass — they must be allowed to co-fire.
+    _bypass_attr = trigger in ("B2_expectancy_below_floor", "B4_same_pair_churn",
+                               "B6_no_profit_12h")
+
+    # Pre-write check (rate limit, freeze, oscillation, etc.) — run per param
+    allowed = {}
+    for k, new_v in validated.items():
+        before_values[k] = None  # not cheap to resolve from state.json; best-effort
+        if _ag_pre_write_check is not None:
+            try:
+                ok, why = _ag_pre_write_check(
+                    bot=bot, param=k, before=0.0, after=float(new_v),
+                    hypothesis=f"{trigger}: {reason}",
+                    expected_impact_usd=abs(_equity) * 0.001,  # ~10bps of equity
+                    equity_usd=_equity,
+                    regime=_regime,
+                    trigger=trigger,
+                    bypass_attribution=_bypass_attr,
+                )
+            except Exception as exc:
+                log.warning("autonomy_guard pre_write_check raised: %s — allowing", exc)
+                ok, why = True, "guard_err"
+            if not ok:
+                log.warning("SENTINEL_OVERRIDE BLOCKED param=%s: %s", k, why)
+                continue
+        allowed[k] = new_v
+
+    if not allowed and not blocked_pairs:
+        log.warning("sentinel override: all params blocked by autonomy_guard; no write")
+        return False
+
     payload = {
         "ts": _now_iso(),
         "ttl_expiry": datetime.fromtimestamp(time.time() + ttl_sec, timezone.utc).isoformat(),
         "reason": reason,
         "source": "opus_sentinel",
-        "changes": validated,
+        "trigger": trigger,
+        "changes": allowed,
         "blocked_pairs": sorted(set(blocked_pairs or [])),
     }
     try:
@@ -724,10 +777,78 @@ def _write_sentinel_override(changes: dict, reason: str, ttl_sec: int = 7200,
         with open(tmp, "w", encoding="utf-8") as f:
             json.dump(payload, f, indent=2)
         os.replace(tmp, ENZOBOT_SENTINEL_OVERRIDE)
-        log.warning("SENTINEL_OVERRIDE WRITTEN: %s (ttl %ds)", validated or blocked_pairs, ttl_sec)
-        return True
+        log.warning("SENTINEL_OVERRIDE WRITTEN: %s (ttl %ds)", allowed or blocked_pairs, ttl_sec)
     except Exception as exc:
         log.error("sentinel override write failed: %s", exc)
+        return False
+
+    # Post-write record per changed param (for outcome attribution)
+    if _ag_record_write is not None:
+        for k, new_v in allowed.items():
+            try:
+                _ag_record_write(
+                    bot=bot, param=k, before=0.0, after=float(new_v),
+                    hypothesis=f"{trigger}: {reason}",
+                    expected_impact_usd=abs(_equity) * 0.001,
+                    equity_usd=_equity,
+                    regime=_regime,
+                    trigger=trigger,
+                    realized_pnl_t0=_realized_pnl,
+                    ttl_sec=ttl_sec,
+                )
+            except Exception as exc:
+                log.warning("autonomy_guard record_write failed: %s", exc)
+
+    return True
+
+
+ENZOBOT_PAIR_STATUS = os.path.join(ENZOBOT_DIR, "pair_status.json")
+
+
+def _write_pair_status(pair: str, status: str, ttl_sec: int,
+                       reason: str, size_multiplier: float = 0.0,
+                       trigger: str = "") -> bool:
+    """Write/update a single pair in pair_status.json. TTL-bounded; engine
+    auto-reverts expired rows by ignoring them.
+    """
+    current = _read_json(ENZOBOT_PAIR_STATUS) or {}
+    meta = current.pop("_meta", {})
+    ttl_ts = datetime.fromtimestamp(time.time() + ttl_sec, timezone.utc).isoformat()
+    current[pair] = {
+        "status": status,
+        "size_multiplier": float(size_multiplier),
+        "ttl_ts": ttl_ts,
+        "reason": reason,
+        "trigger": trigger,
+        "set_at": _now_iso(),
+    }
+    meta["last_update"] = _now_iso()
+    current["_meta"] = meta
+    try:
+        tmp = ENZOBOT_PAIR_STATUS + ".tmp"
+        with open(tmp, "w", encoding="utf-8") as f:
+            json.dump(current, f, indent=2, default=str)
+        os.replace(tmp, ENZOBOT_PAIR_STATUS)
+        log.warning("PAIR_STATUS WRITTEN: %s=%s (ttl %dh) reason=%s",
+                    pair, status, ttl_sec // 3600, reason)
+        if _ag_record_write is not None:
+            try:
+                _ag_record_write(
+                    bot="kraken", param=f"pair_status:{pair}",
+                    before=1.0, after=float(size_multiplier),
+                    hypothesis=f"{trigger}: {reason}",
+                    expected_impact_usd=20.0,  # bleed-stopper, conservative estimate
+                    equity_usd=0.0,
+                    regime=None,
+                    trigger=trigger,
+                    realized_pnl_t0=None,
+                    ttl_sec=ttl_sec,
+                )
+            except Exception:
+                pass
+        return True
+    except Exception as exc:
+        log.error("pair_status write failed: %s", exc)
         return False
 
 
@@ -807,15 +928,25 @@ def run_cycle() -> None:
                     changes={"TARGET_DEPLOY_PCT": 0.25},
                     reason=f"B2 autonomous: expectancy {result['detail'].get('expectancy')} below floor",
                     ttl_sec=7200,
+                    trigger=trigger_key,
                 )
             elif trigger_key == "B4_same_pair_churn":
-                # Block the churning pair + raise global cooldown
+                # Pair-level COOLDOWN via pair_status.json, plus global cooldown bump.
                 bad_pair = result["detail"].get("pair")
+                if bad_pair:
+                    _write_pair_status(
+                        pair=bad_pair, status="COOLDOWN",
+                        ttl_sec=14400,  # 4h
+                        reason="B4: same-pair churn / consecutive losses",
+                        size_multiplier=0.0,
+                        trigger=trigger_key,
+                    )
                 override_applied = _write_sentinel_override(
                     changes={"COOLDOWN_SEC": 5400},  # within [300, 7200]
-                    reason=f"B4 autonomous: {bad_pair} churn, block + cooldown up",
+                    reason=f"B4 autonomous: {bad_pair} COOLDOWN 4h + global cooldown up",
                     ttl_sec=21600,
                     blocked_pairs=[bad_pair] if bad_pair else None,
+                    trigger=trigger_key,
                 )
             elif trigger_key == "B6_no_profit_12h":
                 # Tighten entry gate to only high-conviction signals
@@ -823,6 +954,7 @@ def run_cycle() -> None:
                     changes={"MIN_SCORE_TO_TRADE": 88.0},
                     reason="B6 autonomous: no wins 12h, require higher score",
                     ttl_sec=14400,
+                    trigger=trigger_key,
                 )
 
             actions = []

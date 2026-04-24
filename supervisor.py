@@ -60,6 +60,26 @@ from supervisor_kernel import run_kernel
 from hermes_context import build_context, compute_advisory
 from paperclip_bridge import run_bridge
 from command_snapshots import snapshot_commands
+from autonomy_guard import snapshot_outcomes as _autonomy_snapshot_outcomes
+
+
+def _read_realized_pnl(state_path: str) -> float:
+    try:
+        with open(state_path, encoding="utf-8") as _f:
+            _d = json.load(_f)
+        return float(_d.get("realized_pnl_usd", 0.0))
+    except Exception:
+        return 0.0
+
+
+def _autonomy_pnl_readers() -> dict:
+    """Map bot_name -> callable returning realized_pnl_usd. Used by
+    autonomy_guard to backfill tuning_outcomes.jsonl with t+6h / t+24h deltas."""
+    return {
+        "kraken":     lambda: _read_realized_pnl(r"C:\Projects\enzobot\state.json"),
+        "alpaca":     lambda: _read_realized_pnl(r"C:\Projects\alpacabot\alpaca_state.json"),
+        "sfm":        lambda: _read_realized_pnl(r"C:\Projects\sfmbot\sfm_state.json"),
+    }
 
 
 def _dynamic_brain_interval(regime, portfolio) -> int:
@@ -217,6 +237,14 @@ def _run_cycle(cycle: int, peak_equity: float, anomaly_detector: AnomalyDetector
         snapshot_commands(cycle)
     except Exception:
         pass
+
+    # 5d. Autonomy guard — backfill tuning_outcomes.jsonl with t+6h / t+24h pnl deltas
+    try:
+        _updated = _autonomy_snapshot_outcomes(_autonomy_pnl_readers())
+        if _updated:
+            log.info("[AUTONOMY] backfilled %d outcome snapshot(s)", _updated)
+    except Exception as _exc:
+        log.warning("[AUTONOMY] snapshot failed: %s", _exc)
 
     # 6. Report
     report = build_report(portfolio, regime, cycle, new_peak)

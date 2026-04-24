@@ -392,6 +392,49 @@ def section_next_actions(packet_body: str) -> str:
 # Packet assembly
 # ──────────────────────────────────────────────────────────────────────
 
+def section_autonomy_activity() -> str:
+    """Autonomous tuning activity summary: writes, verdicts, frozen params."""
+    lines = [f"## Autonomy activity (last {WINDOW_HOURS}h)\n"]
+    try:
+        from autonomy_guard import autonomy_summary
+        s = autonomy_summary(WINDOW_HOURS)
+    except Exception as exc:
+        lines.append(f"_autonomy_guard unavailable: {exc}_\n")
+        return "\n".join(lines)
+
+    total = s.get("total_writes", 0)
+    verdicts = s.get("verdicts", {})
+    frozen = s.get("frozen", {})
+
+    if total == 0 and not frozen:
+        lines.append("_No autonomous writes in window. No frozen params._\n")
+        return "\n".join(lines)
+
+    lines.append(f"- Writes: {total}")
+    lines.append(f"- Verdicts: HELPED={verdicts.get('HELPED',0)} "
+                 f"NEUTRAL={verdicts.get('NEUTRAL',0)} "
+                 f"HURT={verdicts.get('HURT',0)} "
+                 f"PENDING={verdicts.get('PENDING',0)}")
+
+    by_bot = s.get("by_bot", {})
+    for bot, info in by_bot.items():
+        params_str = ", ".join(f"{p}×{n}" for p, n in sorted(info.get("params", {}).items()))
+        lines.append(f"  - {bot}: {info.get('writes',0)} writes ({params_str})")
+
+    if frozen:
+        lines.append("")
+        lines.append("**Frozen (circuit breaker):**")
+        for bot, params in frozen.items():
+            for p, info in params.items():
+                import time as _time
+                remain_h = (info.get("frozen_until_ts", 0) - _time.time()) / 3600
+                if remain_h > 0:
+                    tag = "BOT-WIDE" if p == "__ALL__" else p
+                    lines.append(f"  - {bot}/{tag}: {remain_h:.1f}h left — {info.get('reason','')}")
+
+    return "\n".join(lines)
+
+
 def build_packet() -> str:
     now_local = datetime.now()
     parts = [section_header(now_local),
@@ -401,6 +444,7 @@ def build_packet() -> str:
              section_activity(),
              section_brain_activity(),
              section_sentinel_fires(),
+             section_autonomy_activity(),
              section_open_issues()]
     body = "\n---\n\n".join(parts)
     # Derive next actions by scanning the body for signal strings

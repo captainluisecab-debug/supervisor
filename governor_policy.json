@@ -1,0 +1,8 @@
+{
+  "CAUTIOUS_PHASE_HOURS": 6.0,
+  "_hard_bounds": {
+    "CAUTIOUS_PHASE_HOURS": [3.0, 8.0]
+  },
+  "_last_update": "2026-04-23T21:20:00Z",
+  "_note": "Supervisor-owned governor tuning knobs. Autonomous writes via autonomy_guard."
+}

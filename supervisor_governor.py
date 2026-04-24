@@ -482,7 +482,28 @@ def get_regime_behavior(dominant_regime: str) -> dict:
     return REGIME_BEHAVIOR.get(dominant_regime, DEFAULT_BEHAVIOR)
 
 
-CAUTIOUS_PHASE_HOURS = 6  # hours after regime change before trusting the trend
+CAUTIOUS_PHASE_HOURS_DEFAULT = 6.0  # hours after regime change before trusting the trend
+CAUTIOUS_PHASE_HOURS_BOUNDS = (3.0, 8.0)  # autonomous tuning lane
+GOVERNOR_POLICY_FILE = os.path.join(BASE_DIR, "governor_policy.json")
+
+
+def _get_cautious_phase_hours() -> float:
+    """Read CAUTIOUS_PHASE_HOURS from governor_policy.json, clamped to bounds.
+    Falls back to default 6.0 if file missing / malformed."""
+    try:
+        if os.path.exists(GOVERNOR_POLICY_FILE):
+            with open(GOVERNOR_POLICY_FILE, encoding="utf-8") as _f:
+                _p = json.load(_f)
+            _v = float(_p.get("CAUTIOUS_PHASE_HOURS", CAUTIOUS_PHASE_HOURS_DEFAULT))
+            _lo, _hi = CAUTIOUS_PHASE_HOURS_BOUNDS
+            return max(_lo, min(_hi, _v))
+    except Exception:
+        pass
+    return CAUTIOUS_PHASE_HOURS_DEFAULT
+
+
+# Legacy name kept for any callers that import it; prefer _get_cautious_phase_hours().
+CAUTIOUS_PHASE_HOURS = CAUTIOUS_PHASE_HOURS_DEFAULT
 
 def _write_command_file(path: str, mode: str, size_mult: float,
                         entry_allowed: bool, reasoning: str, bot: str,
@@ -706,7 +727,8 @@ def evaluate_kraken(enzo_state: dict, exits: List[dict], cycle: int,
     # until the trend has survived CAUTIOUS_PHASE_HOURS.
     _regime_age_sec = time.time() - _regime_history[-1][0] if _regime_history else 0
     _regime_age_hours = _regime_age_sec / 3600
-    _trend_phase = "early" if _regime_age_hours < CAUTIOUS_PHASE_HOURS else "proven"
+    _cautious_phase_hours = _get_cautious_phase_hours()
+    _trend_phase = "early" if _regime_age_hours < _cautious_phase_hours else "proven"
 
     # Track equity for DD rate
     _equity_history.append((time.time(), equity))
@@ -764,7 +786,7 @@ def evaluate_kraken(enzo_state: dict, exits: List[dict], cycle: int,
         if _trend_phase == "early":
             _phase_size = round(behavior["size_mult"] * 0.5, 2)
             _phase_max_pos = 2
-            _phase_label = f"TRADE (CAUTIOUS — trend {_regime_age_hours:.1f}h < {CAUTIOUS_PHASE_HOURS}h)"
+            _phase_label = f"TRADE (CAUTIOUS — trend {_regime_age_hours:.1f}h < {_cautious_phase_hours}h)"
         else:
             _phase_size = behavior["size_mult"]
             _phase_max_pos = 5
@@ -785,7 +807,7 @@ def evaluate_kraken(enzo_state: dict, exits: List[dict], cycle: int,
         if _trend_phase == "early":
             _phase_size = round(behavior["size_mult"] * 0.5, 2)
             _phase_max_pos = 2
-            _phase_label = f"SCOUT (CAUTIOUS — trend {_regime_age_hours:.1f}h < {CAUTIOUS_PHASE_HOURS}h)"
+            _phase_label = f"SCOUT (CAUTIOUS — trend {_regime_age_hours:.1f}h < {_cautious_phase_hours}h)"
         else:
             _phase_size = behavior["size_mult"]
             _phase_max_pos = 3
