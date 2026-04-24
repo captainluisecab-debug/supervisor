@@ -1,8 +1,21 @@
 # Upgrade Schedule
 
-_Last update: 2026-04-24T13:12:47.052228+00:00_
+_Last update: 2026-04-24T13:18:15.936262+00:00_
 
 Source of truth: `autonomy_schedule.json`. Updated by Opus on ship/revert, surfaced in 08:00 AM / 08:00 PM operator packets.
+
+## ⏳ Built (awaiting restart)
+
+### ALPACA_PARAM_BOUNDS_EXPAND · Expand ALPACA PARAM_BOUNDS (priority 6)
+
+- **Gate:** ALPACA_SENTINEL_OVERRIDE_READ shipped
+- **Target window:** 2026-04-25 20:00 ET
+- **Est build time:** 30m
+- **Exit condition:** n/a
+- **Files:** alpacabot/alpaca_brain.py
+- **Depends on:** ALPACA_SENTINEL_OVERRIDE_READ
+- **Mechanism:** Add MIN_SCORE_TO_TRADE, ROTATE_MIN_PNL_PCT, TIME_STOP_SEC, MIN_HOLD_SEC, TARGET_DEPLOY_PCT.
+
 
 ## 🟢 Live (measuring outcomes)
 
@@ -57,16 +70,6 @@ Source of truth: `autonomy_schedule.json`. Updated by Opus on ship/revert, surfa
 
 
 ## ⏸ Pending approval
-
-### ALPACA_PARAM_BOUNDS_EXPAND · Expand ALPACA PARAM_BOUNDS (priority 6)
-
-- **Gate:** ALPACA_SENTINEL_OVERRIDE_READ shipped
-- **Target window:** 2026-04-25 20:00 ET
-- **Est build time:** 30m
-- **Exit condition:** n/a
-- **Files:** alpacabot/alpaca_brain.py
-- **Depends on:** ALPACA_SENTINEL_OVERRIDE_READ
-- **Mechanism:** Add MIN_SCORE_TO_TRADE, ROTATE_MIN_PNL_PCT, TIME_STOP_SEC, MIN_HOLD_SEC, TARGET_DEPLOY_PCT.
 
 ### ALPACA_SENTINEL_TRIGGERS · Alpaca sentinel triggers (B2/B4/B6/B12 adapted) (priority 7)
 
@@ -302,4 +305,4 @@ Source of truth: `autonomy_schedule.json`. Updated by Opus on ship/revert, surfa
 
 ---
 
-**Next up:** `ALPACA_PARAM_BOUNDS_EXPAND` — Expand ALPACA PARAM_BOUNDS
+**Next up:** `COSMETIC_META_KEY` — Skip _meta key in pair_status reader (cosmetic)
