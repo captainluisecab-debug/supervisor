@@ -1,8 +1,23 @@
 # Upgrade Schedule
 
-_Last update: 2026-04-24T13:21:16.604915+00:00_
+_Last update: 2026-04-24T13:38:34.910347+00:00_
 
 Source of truth: `autonomy_schedule.json`. Updated by Opus on ship/revert, surfaced in 08:00 AM / 08:00 PM operator packets.
+
+## ⏳ Built (awaiting restart)
+
+### ALPACA_SENTINEL_TRIGGERS · Alpaca sentinel triggers (B2/B4/B6/B12 adapted) (priority 7)
+
+- **Gate:** All foundation pieces shipped
+- **Target window:** 2026-04-26 08:00 ET
+- **Est build time:** 2h
+- **Expected protection:** ~$5-15/week
+- **Expected PnL lift:** ~$5-10/week
+- **Exit condition:** 7d attribution gate, L1 freeze on 2 HURT
+- **Files:** supervisor/opus_sentinel.py
+- **Depends on:** ALPACA_EXIT_LEDGER, ALPACA_SENTINEL_OVERRIDE_READ, ALPACA_PAIR_STATUS, ALPACA_PARAM_BOUNDS_EXPAND
+- **Mechanism:** Adapted B2/B4/B6/B12 functions for Alpaca. Sentinel watches 2 sleeves.
+
 
 ## 🟢 Live (measuring outcomes)
 
@@ -67,18 +82,6 @@ Source of truth: `autonomy_schedule.json`. Updated by Opus on ship/revert, surfa
 
 
 ## ⏸ Pending approval
-
-### ALPACA_SENTINEL_TRIGGERS · Alpaca sentinel triggers (B2/B4/B6/B12 adapted) (priority 7)
-
-- **Gate:** All foundation pieces shipped
-- **Target window:** 2026-04-26 08:00 ET
-- **Est build time:** 2h
-- **Expected protection:** ~$5-15/week
-- **Expected PnL lift:** ~$5-10/week
-- **Exit condition:** 7d attribution gate, L1 freeze on 2 HURT
-- **Files:** supervisor/opus_sentinel.py
-- **Depends on:** ALPACA_EXIT_LEDGER, ALPACA_SENTINEL_OVERRIDE_READ, ALPACA_PAIR_STATUS, ALPACA_PARAM_BOUNDS_EXPAND
-- **Mechanism:** Adapted B2/B4/B6/B12 functions for Alpaca. Sentinel watches 2 sleeves.
 
 ### ALPACA_MARKET_SENSE · alpaca_market_sense.py (priority 8)
 
@@ -302,4 +305,4 @@ Source of truth: `autonomy_schedule.json`. Updated by Opus on ship/revert, surfa
 
 ---
 
-**Next up:** `ALPACA_SENTINEL_TRIGGERS` — Alpaca sentinel triggers (B2/B4/B6/B12 adapted)
+**Next up:** `COSMETIC_META_KEY` — Skip _meta key in pair_status reader (cosmetic)

@@ -44,6 +44,20 @@ except Exception as _ag_exc:
         "autonomy_guard import failed, guards disabled: %s", _ag_exc)
     _ag_pre_write_check = None
     _ag_record_write = None
+
+# Alpaca PARAM_BOUNDS — loaded dynamically so A5 bound expansions are picked up.
+# Sentinel uses this to clamp writes to alpaca_sentinel_override.json.
+def _load_alpaca_param_bounds() -> dict:
+    try:
+        import sys as _s
+        if r"C:\Projects\alpacabot" not in _s.path:
+            _s.path.insert(0, r"C:\Projects\alpacabot")
+        from alpaca_brain import PARAM_BOUNDS as _PB
+        return dict(_PB)
+    except Exception as _e:
+        logging.getLogger("opus_sentinel").warning(
+            "alpaca PARAM_BOUNDS load failed: %s — writes will drop alpaca params", _e)
+        return {}
 ENZOBOT_DIR = r"C:\Projects\enzobot"
 ALPACA_DIR = r"C:\Projects\alpacabot"
 SFMBOT_DIR = r"C:\Projects\sfmbot"
@@ -60,6 +74,12 @@ ENZOBOT_STATE = os.path.join(ENZOBOT_DIR, "state.json")
 ENZOBOT_FEEDBACK = os.path.join(ENZOBOT_DIR, "supervisor_feedback.json")
 ENZOBOT_POLICY = os.path.join(ENZOBOT_DIR, "policy.json")
 ENZOBOT_SENTINEL_OVERRIDE = os.path.join(ENZOBOT_DIR, "sentinel_override.json")
+
+# Alpaca parity paths (Phase A A6). A3/A4 readers in alpaca_engine consume these.
+ALPACA_EXIT_LEDGER        = os.path.join(ALPACA_DIR, "alpaca_exit_counterfactuals.jsonl")
+ALPACA_SENTINEL_OVERRIDE  = os.path.join(ALPACA_DIR, "alpaca_sentinel_override.json")
+ALPACA_PAIR_STATUS        = os.path.join(ALPACA_DIR, "alpaca_pair_status.json")
+ALPACA_STATE              = os.path.join(ALPACA_DIR, "alpaca_state.json")
 
 # Output files
 AUDIT_FILE = os.path.join(BASE_DIR, "opus_sentinel_audit.jsonl")
@@ -92,6 +112,12 @@ DEDUP_WINDOWS = {
     "B10_phantom_fill": 86400,                  # 24 hr — must always escalate
     "B11_allowlist_miss": 86400,                # 24 hr per-param suffixed
     "B12_loss_streak_universe": 7200,           # 2 hr (matches TTL of action)
+    # Alpaca parity triggers (Phase A A6a). Same dedup magnitudes as kraken
+    # versions — market-closed hours don't trigger checks anyway.
+    "B2_alpaca_expectancy_below_floor": 7200,
+    "B4_alpaca_same_pair_churn":        21600,
+    "B6_alpaca_no_profit":              14400,
+    "B12_alpaca_loss_streak_universe":  7200,
 }
 
 # B12 threshold: how many consecutive losses universe-wide triggers the pause.
@@ -632,6 +658,190 @@ def check_b12_loss_streak_universe() -> Optional[Dict[str, Any]]:
     }
 
 
+# ──────────────────────────────────────────────────────────────────────
+# Alpaca parity triggers (Phase A A6a). Mirror Kraken B2/B4/B6/B12 but
+# read alpaca_exit_counterfactuals.jsonl and write to alpaca-specific
+# override files. No changes to alpaca_engine.py — sentinel-side only.
+# ──────────────────────────────────────────────────────────────────────
+
+def check_b2_alpaca_expectancy_below_floor() -> Optional[dict]:
+    """B2-alpaca: weighted recent expectancy < -2.0 for 3+ sentinel cycles.
+    Floor is tighter than Kraken (-5.0) because alpaca $ amounts are smaller
+    per trade and positive expectancy is more achievable on stocks.
+    """
+    import math
+    lines = _read_jsonl_tail(ALPACA_EXIT_LEDGER, 60)
+    trading = [e for e in lines
+               if isinstance(e, dict)
+               and e.get("type") == "exit"
+               and e.get("exit_reason") != "governor_force_flatten"]
+    if len(trading) < 10:
+        return None
+    recent = trading[-20:]
+    decay = math.log(2) / 10
+    tw = 0.0
+    wpnl = 0.0
+    for i, e in enumerate(recent):
+        age = len(recent) - 1 - i
+        w = math.exp(-decay * age)
+        wpnl += float(e.get("pnl_usd", 0) or 0) * w
+        tw += w
+    expectancy = wpnl / tw if tw > 0 else 0.0
+    FLOOR = -2.0  # alpaca-specific — tighter than Kraken -5.0
+    if expectancy > FLOOR:
+        _regime_disagreement_count["_b2_alp"] = 0
+        return None
+    _regime_disagreement_count["_b2_alp"] = _regime_disagreement_count.get("_b2_alp", 0) + 1
+    if _regime_disagreement_count["_b2_alp"] < 3:
+        return None
+    if not _should_fire("B2_alpaca_expectancy_below_floor"):
+        return None
+    return {
+        "trigger": "B2_alpaca_expectancy_below_floor",
+        "sleeve":  "alpaca",
+        "detail":  {"expectancy": round(expectancy, 3), "floor": FLOOR, "n_exits": len(recent)},
+        "proposed_action": "tighten_deploy_and_score",
+        "rationale": (
+            f"Alpaca rolling expectancy ({expectancy:.2f}) below {FLOOR} for 3+ "
+            "sentinel cycles. Stock strategy is structurally losing. Autonomous "
+            "response: reduce TARGET_DEPLOY_PCT to 0.25 (2h TTL)."
+        ),
+    }
+
+
+def check_b4_alpaca_same_pair_churn() -> Optional[dict]:
+    """B4-alpaca: same ticker has 6+ exits in last 6h (≥3 round-trips).
+    Threshold lower than Kraken (8) because alpaca has fewer tickers
+    and stocks move slower — 3 round-trips in 6h is already abnormal.
+    """
+    lines = _read_jsonl_tail(ALPACA_EXIT_LEDGER, 200)
+    now = time.time()
+    cutoff = now - 21600  # 6h
+    counts: Dict[str, int] = {}
+    for e in lines:
+        if not isinstance(e, dict):
+            continue
+        ts = float(e.get("ts", 0) or 0)
+        if ts < cutoff:
+            continue
+        sym = e.get("pair", "")
+        if sym:
+            counts[sym] = counts.get(sym, 0) + 1
+    bad = [(s, c) for s, c in counts.items() if c >= 6]
+    if not bad:
+        return None
+    sym, exits = max(bad, key=lambda x: x[1])
+    key = f"B4_alpaca_same_pair_churn_{sym}"
+    DEDUP_WINDOWS[key] = 21600
+    if not _should_fire(key):
+        return None
+    return {
+        "trigger": "B4_alpaca_same_pair_churn",
+        "sleeve":  "alpaca",
+        "detail":  {"pair": sym, "exits_6h": exits,
+                    "round_trips_approx": exits // 2, "all_counts": counts},
+        "proposed_action": "cooldown_ticker",
+        "rationale": (
+            f"Alpaca {sym} has {exits} exits ({exits // 2} round-trips) in last 6h. "
+            "Stock re-entering same noise pattern. COOLDOWN 4h on {sym} via "
+            "alpaca_pair_status.json."
+        ),
+    }
+
+
+def check_b6_alpaca_no_profit() -> Optional[dict]:
+    """B6-alpaca: zero profitable alpaca exits across ≥3 recent exits.
+    Clock-aware by construction: counts exit events, not wall-clock hours.
+    Alpaca only exits during market hours, so 3+ real exits always spans
+    open-market time only (weekends/closes contribute 0 exits, don't count).
+    """
+    lines = _read_jsonl_tail(ALPACA_EXIT_LEDGER, 100)
+    trading = [e for e in lines
+               if isinstance(e, dict)
+               and e.get("type") == "exit"
+               and e.get("exit_reason") != "governor_force_flatten"]
+    # Look at last 3 days of trading exits (captures session-over-session pattern)
+    cutoff = time.time() - 3 * 86400
+    recent = [e for e in trading if float(e.get("ts", 0) or 0) >= cutoff]
+    if len(recent) < 3:
+        return None
+    wins = [e for e in recent if float(e.get("pnl_usd", 0) or 0) > 0]
+    if wins:
+        return None
+    if not _should_fire("B6_alpaca_no_profit"):
+        return None
+    return {
+        "trigger": "B6_alpaca_no_profit",
+        "sleeve":  "alpaca",
+        "detail":  {"exits_3d": len(recent), "wins_3d": 0,
+                    "last_3_reasons": [e.get("exit_reason") for e in recent[-3:]]},
+        "proposed_action": "tighten_deploy_raise_score",
+        "rationale": (
+            f"Alpaca: zero profitable exits across {len(recent)} trades in last 3 days. "
+            "Stock strategy not producing wins. Tighten entry — reduce "
+            "TARGET_DEPLOY_PCT to 0.30 (2h TTL) + raise MIN_SCORE_TO_TRADE to 88 "
+            "(engine reads at A6b; forward-compat until then)."
+        ),
+    }
+
+
+def check_b12_alpaca_loss_streak_universe() -> Optional[dict]:
+    """B12-alpaca: N consecutive losing alpaca exits. Includes
+    governor_force_flatten (force-flat-at-loss is a real losing decision).
+
+    Uses lower threshold (4 vs Kraken 5) because alpaca universe is
+    smaller (8 tickers) and stocks move slower — 4 consecutive losses
+    indicates persistent misalignment faster than it would on crypto.
+    """
+    ALPACA_LOSS_STREAK_THRESHOLD = 4
+    lines = _read_jsonl_tail(ALPACA_EXIT_LEDGER, 50)
+    exits = [e for e in lines if isinstance(e, dict) and e.get("type") == "exit"]
+    if len(exits) < ALPACA_LOSS_STREAK_THRESHOLD:
+        return None
+
+    exits.sort(key=lambda e: float(e.get("ts", 0) or 0))
+    streak = 0
+    streak_pairs = []
+    for e in reversed(exits):
+        pnl = float(e.get("pnl_usd", 0) or 0)
+        if pnl < 0:
+            streak += 1
+            streak_pairs.append(e.get("pair", "?"))
+        else:
+            break
+
+    if streak < ALPACA_LOSS_STREAK_THRESHOLD:
+        return None
+    if not _should_fire("B12_alpaca_loss_streak_universe"):
+        return None
+
+    last_loss = list(reversed(exits))[0]
+    last_pair = last_loss.get("pair", "")
+    total_loss_usd = sum(
+        float(e.get("pnl_usd", 0) or 0)
+        for e in list(reversed(exits))[:streak]
+    )
+
+    return {
+        "trigger": "B12_alpaca_loss_streak_universe",
+        "sleeve":  "alpaca",
+        "detail": {
+            "streak": streak,
+            "threshold": ALPACA_LOSS_STREAK_THRESHOLD,
+            "pairs_in_streak": streak_pairs[:10],
+            "total_streak_pnl_usd": round(total_loss_usd, 2),
+            "last_losing_pair": last_pair,
+        },
+        "proposed_action": "tighten_deploy_raise_score_cooldown_last_ticker",
+        "rationale": (
+            f"Alpaca {streak} consecutive losing exits (threshold {ALPACA_LOSS_STREAK_THRESHOLD}). "
+            f"Total streak PnL ${total_loss_usd:+.2f}. Autonomous response: "
+            f"TARGET_DEPLOY_PCT=0.25, MIN_SCORE_TO_TRADE=88 (2h TTL), "
+            f"{last_pair} COOLDOWN 4h."
+        ),
+    }
+
+
 TRIGGERS = [
     check_b1_kernel_halt_persistent,
     check_b2_expectancy_below_floor,
@@ -645,6 +855,11 @@ TRIGGERS = [
     check_b10_phantom_fill,
     check_b11_allowlist_miss,
     check_b12_loss_streak_universe,
+    # Alpaca parity (A6a)
+    check_b2_alpaca_expectancy_below_floor,
+    check_b4_alpaca_same_pair_churn,
+    check_b6_alpaca_no_profit,
+    check_b12_alpaca_loss_streak_universe,
 ]
 
 
@@ -763,6 +978,36 @@ ISSUE_TEMPLATES = {
             "any pairs (includes governor_force_flatten). Fires every 2h "
             "while streak persists; auto-closes when a winning exit breaks "
             "the streak."
+        ],
+    },
+    # Alpaca parity (A6a)
+    "B2_alpaca_expectancy_below_floor": {
+        "anomaly_type": "ALPACA_EXPECTANCY_STRUCTURAL_NEGATIVE",
+        "severity": "HIGH",
+        "reopen_criteria": [
+            "Alpaca 20-exit decayed expectancy below -2.0 for 3+ sentinel cycles"
+        ],
+    },
+    "B4_alpaca_same_pair_churn": {
+        "anomaly_type": "ALPACA_TICKER_CHURN_EXCESSIVE",
+        "severity": "MEDIUM",
+        "reopen_criteria": [
+            "Same alpaca ticker: 6+ exits in 6h (≥3 round-trips)"
+        ],
+    },
+    "B6_alpaca_no_profit": {
+        "anomaly_type": "ALPACA_NO_WIN_3_SESSIONS",
+        "severity": "MEDIUM",
+        "reopen_criteria": [
+            "Alpaca: zero profitable exits across ≥3 trades in last 3 days"
+        ],
+    },
+    "B12_alpaca_loss_streak_universe": {
+        "anomaly_type": "ALPACA_LOSS_STREAK_UNIVERSE_WIDE",
+        "severity": "MEDIUM",
+        "reopen_criteria": [
+            "4+ consecutive losing exits on alpaca (includes force_flatten). "
+            "Auto-closes when a winning exit breaks the streak."
         ],
     },
 }
@@ -949,6 +1194,156 @@ def _write_pair_status(pair: str, status: str, ttl_sec: int,
         return False
 
 
+# ──────────────────────────────────────────────────────────────────────
+# Alpaca-specific write helpers (Phase A A6a).
+# Parallel to kraken _write_sentinel_override / _write_pair_status but
+# route to alpaca files and validate against alpaca PARAM_BOUNDS. Same
+# autonomy_guard gating + attribution logging. When the Phase C refactor
+# lands, these merge into a single parameterized sleeve-aware helper.
+# ──────────────────────────────────────────────────────────────────────
+
+def _write_alpaca_sentinel_override(changes: dict, reason: str, ttl_sec: int,
+                                     trigger: str) -> bool:
+    """Write alpaca_sentinel_override.json with autonomy_guard gating.
+    Mirrors enzobot's _write_sentinel_override but uses ALPACA_SENTINEL_OVERRIDE
+    path + alpaca PARAM_BOUNDS for validation.
+    """
+    bounds = _load_alpaca_param_bounds()
+    validated = {}
+    for k, v in (changes or {}).items():
+        if k not in bounds:
+            log.warning("alpaca sentinel override skipped %s=%s (not in ALPACA_PARAM_BOUNDS)", k, v)
+            continue
+        try:
+            lo, hi = bounds[k]
+            clamped = max(lo, min(hi, float(v)))
+            if k == "MAX_POSITIONS":
+                clamped = int(clamped)
+            validated[k] = clamped
+        except Exception as exc:
+            log.warning("alpaca sentinel override %s clamp failed: %s", k, exc)
+
+    if not validated:
+        return False
+
+    # Equity / realized_pnl from alpaca_state.json (A2 canonical fields)
+    try:
+        _state = _read_json(ALPACA_STATE) or {}
+        _equity = float(_state.get("equity_usd") or _state.get("peak_equity_usd") or 0.0)
+        _realized = float(_state.get("realized_pnl_usd", 0.0))
+        _regime = None  # alpaca has per-ticker regime, not one dominant
+    except Exception:
+        _equity, _realized, _regime = 0.0, 0.0, None
+
+    # B2/B4/B6/B12 alpaca triggers all bypass attribution (same as kraken)
+    _bypass_attr = trigger in (
+        "B2_alpaca_expectancy_below_floor", "B4_alpaca_same_pair_churn",
+        "B6_alpaca_no_profit", "B12_alpaca_loss_streak_universe",
+    )
+
+    allowed = {}
+    for k, new_v in validated.items():
+        if _ag_pre_write_check is not None:
+            try:
+                ok, why = _ag_pre_write_check(
+                    bot="alpaca", param=k, before=0.0, after=float(new_v),
+                    hypothesis=f"{trigger}: {reason}",
+                    expected_impact_usd=abs(_equity) * 0.001,
+                    equity_usd=_equity, regime=_regime,
+                    trigger=trigger, bypass_attribution=_bypass_attr,
+                )
+            except Exception as exc:
+                log.warning("alpaca autonomy_guard raised: %s — allowing", exc)
+                ok = True
+            if not ok:
+                log.warning("ALPACA_SENTINEL_OVERRIDE BLOCKED param=%s: %s", k, why)
+                continue
+        allowed[k] = new_v
+
+    if not allowed:
+        log.warning("alpaca sentinel override: all params blocked by autonomy_guard; no write")
+        return False
+
+    payload = {
+        "ts":         _now_iso(),
+        "ttl_expiry": datetime.fromtimestamp(time.time() + ttl_sec, timezone.utc).isoformat(),
+        "reason":     reason,
+        "source":     "opus_sentinel",
+        "trigger":    trigger,
+        "changes":    allowed,
+    }
+    try:
+        tmp = ALPACA_SENTINEL_OVERRIDE + ".tmp"
+        with open(tmp, "w", encoding="utf-8") as f:
+            json.dump(payload, f, indent=2)
+        os.replace(tmp, ALPACA_SENTINEL_OVERRIDE)
+        log.warning("ALPACA_SENTINEL_OVERRIDE WRITTEN: %s (ttl %ds)", allowed, ttl_sec)
+    except Exception as exc:
+        log.error("alpaca sentinel override write failed: %s", exc)
+        return False
+
+    if _ag_record_write is not None:
+        for k, new_v in allowed.items():
+            try:
+                _ag_record_write(
+                    bot="alpaca", param=k, before=0.0, after=float(new_v),
+                    hypothesis=f"{trigger}: {reason}",
+                    expected_impact_usd=abs(_equity) * 0.001,
+                    equity_usd=_equity, regime=_regime,
+                    trigger=trigger,
+                    realized_pnl_t0=_realized,
+                    ttl_sec=ttl_sec,
+                )
+            except Exception as exc:
+                log.warning("alpaca record_write failed: %s", exc)
+
+    return True
+
+
+def _write_alpaca_pair_status(pair: str, status: str, ttl_sec: int,
+                               reason: str, size_multiplier: float = 0.0,
+                               trigger: str = "") -> bool:
+    """Write alpaca_pair_status.json — mirror of enzobot _write_pair_status.
+    TTL-bounded per-ticker status (COOLDOWN/PROBATION/DISABLED_SOFT).
+    """
+    current = _read_json(ALPACA_PAIR_STATUS) or {}
+    meta = current.pop("_meta", {})
+    ttl_ts = datetime.fromtimestamp(time.time() + ttl_sec, timezone.utc).isoformat()
+    current[pair] = {
+        "status":          status,
+        "size_multiplier": float(size_multiplier),
+        "ttl_ts":          ttl_ts,
+        "reason":          reason,
+        "trigger":         trigger,
+        "set_at":          _now_iso(),
+    }
+    meta["last_update"] = _now_iso()
+    current["_meta"] = meta
+    try:
+        tmp = ALPACA_PAIR_STATUS + ".tmp"
+        with open(tmp, "w", encoding="utf-8") as f:
+            json.dump(current, f, indent=2, default=str)
+        os.replace(tmp, ALPACA_PAIR_STATUS)
+        log.warning("ALPACA_PAIR_STATUS WRITTEN: %s=%s (ttl %dh) reason=%s",
+                    pair, status, ttl_sec // 3600, reason)
+        if _ag_record_write is not None:
+            try:
+                _ag_record_write(
+                    bot="alpaca", param=f"pair_status:{pair}",
+                    before=1.0, after=float(size_multiplier),
+                    hypothesis=f"{trigger}: {reason}",
+                    expected_impact_usd=5.0,
+                    equity_usd=0.0, regime=None, trigger=trigger,
+                    realized_pnl_t0=None, ttl_sec=ttl_sec,
+                )
+            except Exception:
+                pass
+        return True
+    except Exception as exc:
+        log.error("alpaca pair_status write failed: %s", exc)
+        return False
+
+
 def _file_issue(trigger_key: str, trigger_result: dict) -> Optional[str]:
     """Append a structured issue to issues.jsonl. Returns issue_id or None."""
     template = ISSUE_TEMPLATES.get(trigger_key, {})
@@ -1075,6 +1470,60 @@ def run_cycle() -> None:
                         f"B12 autonomous: {streak}-loss streak "
                         f"(total ${detail.get('total_streak_pnl_usd', 0):+.2f}) "
                         f"→ deploy=0.25, score>=88, {last_pair} COOLDOWN 4h"
+                    ),
+                    ttl_sec=7200,  # 2h
+                    trigger=trigger_key,
+                )
+            # ── Alpaca parity triggers (A6a) ─────────────────────────
+            elif trigger_key == "B2_alpaca_expectancy_below_floor":
+                override_applied = _write_alpaca_sentinel_override(
+                    changes={"TARGET_DEPLOY_PCT": 0.25},
+                    reason=f"B2-alpaca: expectancy {result['detail'].get('expectancy')} below floor",
+                    ttl_sec=7200,
+                    trigger=trigger_key,
+                )
+            elif trigger_key == "B4_alpaca_same_pair_churn":
+                bad_ticker = result["detail"].get("pair")
+                if bad_ticker:
+                    _write_alpaca_pair_status(
+                        pair=bad_ticker, status="COOLDOWN",
+                        ttl_sec=14400,  # 4h
+                        reason="B4-alpaca: ticker churn / consecutive exits",
+                        size_multiplier=0.0,
+                        trigger=trigger_key,
+                    )
+                override_applied = True  # pair_status write counts as applied
+            elif trigger_key == "B6_alpaca_no_profit":
+                override_applied = _write_alpaca_sentinel_override(
+                    changes={
+                        "TARGET_DEPLOY_PCT": 0.30,
+                        "MIN_SCORE_TO_TRADE": 88.0,  # forward-compat; engine wires at A6b
+                    },
+                    reason="B6-alpaca: no wins 3 sessions, tighten deploy + entry bar",
+                    ttl_sec=14400,  # 4h
+                    trigger=trigger_key,
+                )
+            elif trigger_key == "B12_alpaca_loss_streak_universe":
+                detail = result.get("detail", {}) or {}
+                last_ticker = detail.get("last_losing_pair", "")
+                streak = detail.get("streak", 0)
+                if last_ticker:
+                    _write_alpaca_pair_status(
+                        pair=last_ticker, status="COOLDOWN",
+                        ttl_sec=14400,  # 4h
+                        reason=f"B12-alpaca: {streak}-loss streak, last losing ticker",
+                        size_multiplier=0.0,
+                        trigger=trigger_key,
+                    )
+                override_applied = _write_alpaca_sentinel_override(
+                    changes={
+                        "TARGET_DEPLOY_PCT": 0.25,
+                        "MIN_SCORE_TO_TRADE": 88.0,
+                    },
+                    reason=(
+                        f"B12-alpaca: {streak}-loss streak "
+                        f"(total ${detail.get('total_streak_pnl_usd', 0):+.2f}) "
+                        f"→ deploy=0.25, score>=88, {last_ticker} COOLDOWN 4h"
                     ),
                     ttl_sec=7200,  # 2h
                     trigger=trigger_key,
