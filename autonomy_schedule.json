@@ -2,7 +2,7 @@
   "_meta": {
     "description": "Persistent upgrade schedule. Owner: Opus (auto-updates on ship/revert). Read by opus_review.py for 08:00 AM / 08:00 PM packets. Read/update by operator at briefs.",
     "schema": "upgrades[]: {id, title, priority, status, approved_in_principle, gate, target_window, est_build_time, expected_protection_usd_per_week, exit_condition, files_touched, depends_on, notes, history[]}",
-    "last_update": "2026-04-24T13:10:20.397796+00:00",
+    "last_update": "2026-04-24T13:12:47.052228+00:00",
     "status_values": [
       "pending_approval",
       "approved",
@@ -467,7 +467,7 @@
       "id": "ALPACA_PAIR_STATUS",
       "title": "Alpaca pair_status.json read path",
       "priority": 4,
-      "status": "built_awaiting_restart",
+      "status": "live",
       "approved_in_principle": true,
       "gate": "A1+A2 shipped",
       "target_window": "2026-04-25 08:00 ET",
@@ -501,6 +501,12 @@
           "event": "status_change:pending_approval->built_awaiting_restart",
           "by": "Opus",
           "note": "Reader + BUY-loop skip wired. Smoke-tested: _meta ignored, expired TTL ignored, 3 bad statuses blocked correctly."
+        },
+        {
+          "ts": "2026-04-24T13:12:47.041611+00:00",
+          "event": "status_change:built_awaiting_restart->live",
+          "by": "Opus",
+          "note": "Loaded cleanly post-restart (cycle 1872). Reader returns empty gracefully until A7 populates the file."
         }
       ]
     },
@@ -508,7 +514,7 @@
       "id": "ALPACA_SENTINEL_OVERRIDE_READ",
       "title": "Alpaca sentinel_override.json read path",
       "priority": 5,
-      "status": "built_awaiting_restart",
+      "status": "live",
       "approved_in_principle": true,
       "gate": "ALPACA_PAIR_STATUS shipped",
       "target_window": "2026-04-25 08:00 ET",
@@ -541,6 +547,12 @@
           "event": "status_change:pending_approval->built_awaiting_restart",
           "by": "Opus",
           "note": "TTL-bounded reader merged into brain overrides. Smoke-tested: valid applied, ceiling clamp works, out-of-bounds dropped, expired ignored."
+        },
+        {
+          "ts": "2026-04-24T13:12:47.052218+00:00",
+          "event": "status_change:built_awaiting_restart->live",
+          "by": "Opus",
+          "note": "Loaded cleanly post-restart. Reader returns unchanged dict until A7 populates the file."
         }
       ]
     },

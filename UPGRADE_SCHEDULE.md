@@ -1,31 +1,8 @@
 # Upgrade Schedule
 
-_Last update: 2026-04-24T13:10:20.397796+00:00_
+_Last update: 2026-04-24T13:12:47.052228+00:00_
 
 Source of truth: `autonomy_schedule.json`. Updated by Opus on ship/revert, surfaced in 08:00 AM / 08:00 PM operator packets.
-
-## ⏳ Built (awaiting restart)
-
-### ALPACA_PAIR_STATUS · Alpaca pair_status.json read path (priority 4)
-
-- **Gate:** A1+A2 shipped
-- **Target window:** 2026-04-25 08:00 ET
-- **Est build time:** 1h
-- **Exit condition:** n/a
-- **Files:** alpacabot/alpaca_engine.py
-- **Depends on:** ALPACA_EXIT_LEDGER, ALPACA_STATE_SCHEMA_UNIFY
-- **Mechanism:** Mirror enzobot _apply_pair_status. TTL-bounded reversion.
-
-### ALPACA_SENTINEL_OVERRIDE_READ · Alpaca sentinel_override.json read path (priority 5)
-
-- **Gate:** ALPACA_PAIR_STATUS shipped
-- **Target window:** 2026-04-25 08:00 ET
-- **Est build time:** 1h
-- **Exit condition:** n/a
-- **Files:** alpacabot/alpaca_engine.py
-- **Depends on:** ALPACA_PAIR_STATUS
-- **Mechanism:** Mirror enzobot _apply_sentinel_override. Layered on alpaca_brain_overrides.
-
 
 ## 🟢 Live (measuring outcomes)
 
@@ -57,6 +34,26 @@ Source of truth: `autonomy_schedule.json`. Updated by Opus on ship/revert, surfa
 - **Exit condition:** n/a
 - **Files:** alpacabot/alpaca_state.py
 - **Mechanism:** Add canonical equity_usd, realized_pnl_usd, unrealized_pnl_usd, dd_pct, peak_equity_usd fields. Keep aliases.
+
+### ALPACA_PAIR_STATUS · Alpaca pair_status.json read path (priority 4)
+
+- **Gate:** A1+A2 shipped
+- **Target window:** 2026-04-25 08:00 ET
+- **Est build time:** 1h
+- **Exit condition:** n/a
+- **Files:** alpacabot/alpaca_engine.py
+- **Depends on:** ALPACA_EXIT_LEDGER, ALPACA_STATE_SCHEMA_UNIFY
+- **Mechanism:** Mirror enzobot _apply_pair_status. TTL-bounded reversion.
+
+### ALPACA_SENTINEL_OVERRIDE_READ · Alpaca sentinel_override.json read path (priority 5)
+
+- **Gate:** ALPACA_PAIR_STATUS shipped
+- **Target window:** 2026-04-25 08:00 ET
+- **Est build time:** 1h
+- **Exit condition:** n/a
+- **Files:** alpacabot/alpaca_engine.py
+- **Depends on:** ALPACA_PAIR_STATUS
+- **Mechanism:** Mirror enzobot _apply_sentinel_override. Layered on alpaca_brain_overrides.
 
 
 ## ⏸ Pending approval
@@ -305,4 +302,4 @@ Source of truth: `autonomy_schedule.json`. Updated by Opus on ship/revert, surfa
 
 ---
 
-**Next up:** `COSMETIC_META_KEY` — Skip _meta key in pair_status reader (cosmetic)
+**Next up:** `ALPACA_PARAM_BOUNDS_EXPAND` — Expand ALPACA PARAM_BOUNDS
