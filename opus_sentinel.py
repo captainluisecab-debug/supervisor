@@ -803,10 +803,23 @@ def _write_sentinel_override(changes: dict, reason: str, ttl_sec: int = 7200,
         return False
 
     # Read current live values (for before-state attribution)
+    # state.json field names across sleeves:
+    #   enzobot: cash, equity_peak, realized_pnl (no direct equity_usd)
+    #   derived equity ≈ cash + open position value (approximate via equity_peak)
     try:
         _state = _read_json(ENZOBOT_STATE) or {}
-        _equity = float(_state.get("equity_usd") or _state.get("portfolio_equity_usd") or 0.0)
-        _realized_pnl = float(_state.get("realized_pnl_usd", 0.0))
+        _equity = float(
+            _state.get("equity_usd")
+            or _state.get("portfolio_equity_usd")
+            or _state.get("equity_peak")
+            or _state.get("cash")
+            or 0.0
+        )
+        _realized_pnl = float(
+            _state.get("realized_pnl_usd")
+            or _state.get("realized_pnl")
+            or 0.0
+        )
         _regime = None
         _feedback = _read_json(ENZOBOT_FEEDBACK) or {}
         _regime = _feedback.get("regime") or _feedback.get("dominant_regime")
@@ -814,9 +827,11 @@ def _write_sentinel_override(changes: dict, reason: str, ttl_sec: int = 7200,
         _equity, _realized_pnl, _regime = 0.0, 0.0, None
 
     # For attribution in autonomy_guard: treat sentinel emergency triggers
-    # (B2/B4/B6) as attribution-bypass — they must be allowed to co-fire.
+    # (B2/B4/B6/B12) as attribution-bypass — they must be allowed to co-fire.
+    # B12 writes pair_status + 2 sentinel_override params as one unit; without
+    # bypass, attribution_clear blocks params 2 and 3 after pair_status lands.
     _bypass_attr = trigger in ("B2_expectancy_below_floor", "B4_same_pair_churn",
-                               "B6_no_profit_12h")
+                               "B6_no_profit_12h", "B12_loss_streak_universe")
 
     # Pre-write check (rate limit, freeze, oscillation, etc.) — run per param
     allowed = {}
