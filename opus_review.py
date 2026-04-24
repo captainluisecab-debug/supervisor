@@ -435,6 +435,15 @@ def section_autonomy_activity() -> str:
     return "\n".join(lines)
 
 
+def section_upgrade_schedule() -> str:
+    """Compact schedule view: active upgrades + next-up line."""
+    try:
+        from autonomy_schedule import packet_section
+        return packet_section()
+    except Exception as exc:
+        return f"## Upgrade schedule\n\n_schedule unavailable: {exc}_"
+
+
 def build_packet() -> str:
     now_local = datetime.now()
     parts = [section_header(now_local),
@@ -445,6 +454,7 @@ def build_packet() -> str:
              section_brain_activity(),
              section_sentinel_fires(),
              section_autonomy_activity(),
+             section_upgrade_schedule(),
              section_open_issues()]
     body = "\n---\n\n".join(parts)
     # Derive next actions by scanning the body for signal strings
