@@ -1,24 +1,10 @@
 # Upgrade Schedule
 
-_Last update: 2026-04-24T12:47:45.758289+00:00_
+_Last update: 2026-04-24T12:55:48.115857+00:00_
 
 Source of truth: `autonomy_schedule.json`. Updated by Opus on ship/revert, surfaced in 08:00 AM / 08:00 PM operator packets.
 
-## 🟢 Live (measuring outcomes)
-
-### B12 · Loss-streak universe pause (priority 1)
-
-- **Gate:** 8 AM 2026-04-24 brief: clean overnight autonomy stack + operator green-light
-- **Target window:** 2026-04-24 08:00 ET
-- **Est build time:** 1h
-- **Expected protection:** ~$30-60/week
-- **Expected PnL lift:** ~$15-25/week
-- **Exit condition:** 7-day cumulative attribution HELPED==0 and HURT>=2 → revert trigger; L1 freeze on 2 HURT verdicts same param
-- **Files:** supervisor/opus_sentinel.py
-- **Mechanism:** 5 consec universe losses → sentinel_override: TARGET_DEPLOY_PCT=0.25 + MIN_SCORE_TO_TRADE=88 for 2h TTL; pair_status COOLDOWN on last losing pair 4h TTL
-
-
-## ⏸ Pending approval
+## ⏳ Built (awaiting restart)
 
 ### ALPACA_EXIT_LEDGER · Alpaca exit counterfactuals ledger (priority 2)
 
@@ -37,6 +23,23 @@ Source of truth: `autonomy_schedule.json`. Updated by Opus on ship/revert, surfa
 - **Exit condition:** n/a
 - **Files:** alpacabot/alpaca_state.py
 - **Mechanism:** Add canonical equity_usd, realized_pnl_usd, unrealized_pnl_usd, dd_pct, peak_equity_usd fields. Keep aliases.
+
+
+## 🟢 Live (measuring outcomes)
+
+### B12 · Loss-streak universe pause (priority 1)
+
+- **Gate:** 8 AM 2026-04-24 brief: clean overnight autonomy stack + operator green-light
+- **Target window:** 2026-04-24 08:00 ET
+- **Est build time:** 1h
+- **Expected protection:** ~$30-60/week
+- **Expected PnL lift:** ~$15-25/week
+- **Exit condition:** 7-day cumulative attribution HELPED==0 and HURT>=2 → revert trigger; L1 freeze on 2 HURT verdicts same param
+- **Files:** supervisor/opus_sentinel.py
+- **Mechanism:** 5 consec universe losses → sentinel_override: TARGET_DEPLOY_PCT=0.25 + MIN_SCORE_TO_TRADE=88 for 2h TTL; pair_status COOLDOWN on last losing pair 4h TTL
+
+
+## ⏸ Pending approval
 
 ### ALPACA_PAIR_STATUS · Alpaca pair_status.json read path (priority 4)
 
@@ -302,4 +305,4 @@ Source of truth: `autonomy_schedule.json`. Updated by Opus on ship/revert, surfa
 
 ---
 
-**Next up:** `ALPACA_EXIT_LEDGER` — Alpaca exit counterfactuals ledger
+**Next up:** `COSMETIC_META_KEY` — Skip _meta key in pair_status reader (cosmetic)
