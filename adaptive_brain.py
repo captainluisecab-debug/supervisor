@@ -181,7 +181,16 @@ def apply_recommendations(
             log.info("[BRAIN] Clamped %s: opus=%s -> bounds=[%s,%s] -> %s",
                      param, new_val, lo, hi, clamped)
         old_val = current_params.get(param)
-        if old_val is not None and abs(float(clamped) - float(old_val)) > 0.001:
+        # FIX (2026-04-24): Original condition required old_val is not None,
+        # which silently dropped any Opus recommendation for a param not
+        # already in current_params. This bit Kraken because supervisor_brain
+        # passes the rule-engine's intended diff (often {}) as current_params,
+        # not the live overrides — so every Opus recommendation Kraken's
+        # rule engine wasn't already touching got dropped. 4+ logged Opus
+        # reviews for kraken with action="adjust" + changes=[] confirmed.
+        # Treating old_val=None as "not yet set, apply new value" — both
+        # diff-from-old and brand-new override now count as a change.
+        if old_val is None or abs(float(clamped) - float(old_val)) > 0.001:
             new_params[param] = clamped
             changes.append({"param": param, "old": old_val, "new": clamped,
                            "reasoning": recommendations.get("reasoning", "")})
