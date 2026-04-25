@@ -1105,24 +1105,45 @@ def _write_sentinel_override(changes: dict, reason: str, ttl_sec: int = 7200,
         log.warning("sentinel override: all params blocked by autonomy_guard; no write")
         return False
 
-    payload = {
-        "ts": _now_iso(),
-        "ttl_expiry": datetime.fromtimestamp(time.time() + ttl_sec, timezone.utc).isoformat(),
-        "reason": reason,
-        "source": "opus_sentinel",
-        "trigger": trigger,
-        "changes": allowed,
-        "blocked_pairs": sorted(set(blocked_pairs or [])),
-    }
+    # Route through pause_writer for coordination (operator-pause sanctity,
+    # same-trigger extension, multi-trigger merge, audit trail).
     try:
-        tmp = ENZOBOT_SENTINEL_OVERRIDE + ".tmp"
-        with open(tmp, "w", encoding="utf-8") as f:
-            json.dump(payload, f, indent=2)
-        os.replace(tmp, ENZOBOT_SENTINEL_OVERRIDE)
-        log.warning("SENTINEL_OVERRIDE WRITTEN: %s (ttl %ds)", allowed or blocked_pairs, ttl_sec)
+        from pause_writer import write_pause as _coord_write_pause
+        _result = _coord_write_pause(
+            source="opus_sentinel",
+            trigger=trigger or "opus_sentinel_unknown",
+            ttl_sec=ttl_sec,
+            changes=allowed,
+            blocked_pairs=sorted(set(blocked_pairs or [])),
+            reason=reason,
+        )
+        action = _result.get("action", "?")
+        if action == "blocked_by_operator":
+            log.warning("SENTINEL_OVERRIDE refused by pause coordinator — operator pause active")
+            return False
+        log.warning("SENTINEL_OVERRIDE %s via coordinator: %s (ttl %ds)",
+                    action, allowed or blocked_pairs, ttl_sec)
     except Exception as exc:
-        log.error("sentinel override write failed: %s", exc)
-        return False
+        # Fallback: direct write (rare — only if pause_writer unavailable)
+        log.warning("pause_writer unavailable, fallback to direct write: %s", exc)
+        payload = {
+            "ts": _now_iso(),
+            "ttl_expiry": datetime.fromtimestamp(time.time() + ttl_sec, timezone.utc).isoformat(),
+            "reason": reason,
+            "source": "opus_sentinel",
+            "trigger": trigger,
+            "changes": allowed,
+            "blocked_pairs": sorted(set(blocked_pairs or [])),
+        }
+        try:
+            tmp = ENZOBOT_SENTINEL_OVERRIDE + ".tmp"
+            with open(tmp, "w", encoding="utf-8") as f:
+                json.dump(payload, f, indent=2)
+            os.replace(tmp, ENZOBOT_SENTINEL_OVERRIDE)
+            log.warning("SENTINEL_OVERRIDE WRITTEN (fallback path)")
+        except Exception as exc2:
+            log.error("sentinel override write failed (fallback): %s", exc2)
+            return False
 
     # Post-write record per changed param (for outcome attribution)
     if _ag_record_write is not None:
