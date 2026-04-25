@@ -113,13 +113,30 @@ def _fmt_age(age_sec: float) -> str:
 # ──────────────────────────────────────────────────────────────────────
 
 def section_header(now_local: datetime) -> str:
-    which = "8:00 AM" if now_local.hour < 12 else "8:00 PM"
+    """Canonical packet header. All times via time_fmt — weekday, date,
+    ET, UTC all derived from ONE datetime. Narrative labels only if they
+    actually match the real time.
+    """
+    try:
+        from time_fmt import fmt_full, active_time_labels, now_utc as _now_utc, to_et
+    except Exception:
+        # Fallback to a safe minimum if time_fmt somehow isn't importable
+        return f"# Operator Brief — {now_local.strftime('%Y-%m-%d %H:%M')}\n\n"
+
+    # Use canonical 'now' (UTC-aware), not the module-local naive now_local
+    now_u = _now_utc()
+    now_et = to_et(now_u)
+    labels = active_time_labels(now_u)
+    label_str = ", ".join(labels) if labels else "(no narrative label)"
+
+    # Window start = WINDOW_HOURS before now, formatted via time_fmt
+    window_start = now_u - timedelta(hours=WINDOW_HOURS)
+
     return (
-        f"# Operator Brief — {now_local.strftime('%Y-%m-%d %H:%M %Z')}\n\n"
-        f"**Target read time: {which} local**\n"
-        f"**Look-back window: {WINDOW_HOURS}h** (from "
-        f"{(now_local - timedelta(hours=WINDOW_HOURS)).strftime('%H:%M')} "
-        f"to {now_local.strftime('%H:%M')})\n"
+        f"# Operator Brief — {fmt_full(now_u)}\n\n"
+        f"**Window active labels:** {label_str}\n"
+        f"**Look-back window:** {WINDOW_HOURS}h — from "
+        f"{fmt_full(window_start)} to {fmt_full(now_u)}\n"
     )
 
 
