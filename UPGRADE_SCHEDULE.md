@@ -1,8 +1,33 @@
 # Upgrade Schedule
 
-_Last update: 2026-04-25T00:41:22.492043+00:00_
+_Last update: 2026-04-25T01:07:04.505760+00:00_
 
 Source of truth: `autonomy_schedule.json`. Updated by Opus on ship/revert, surfaced in 08:00 AM / 08:00 PM operator packets.
+
+## ⏳ Built (awaiting restart)
+
+### ALPACA_MARKET_SENSE · alpaca_market_sense.py (priority 8)
+
+- **Gate:** ALPACA_SENTINEL_TRIGGERS shipped
+- **Target window:** 2026-04-26 20:00 ET
+- **Est build time:** 2h
+- **Expected protection:** ~$5-10/week
+- **Expected PnL lift:** ~$5-10/week
+- **Exit condition:** false-positive rate > 50% reconsider
+- **Files:** alpacabot/alpaca_market_sense.py (new), alpacabot/alpaca_engine.py
+- **Depends on:** ALPACA_SENTINEL_TRIGGERS
+- **Mechanism:** Market-hours gate, lunch chop block, earnings avoidance, SPY drift. Subsumes ALPACA_LUNCH_GATE.
+
+### AUTONOMY_GUARD_CLOCK_AWARE · Make autonomy_guard market-hours-aware (priority 9)
+
+- **Gate:** ALPACA_SENTINEL_TRIGGERS shipped
+- **Target window:** 2026-04-27 08:00 ET
+- **Est build time:** 1h
+- **Exit condition:** n/a
+- **Files:** supervisor/autonomy_guard.py
+- **Depends on:** ALPACA_SENTINEL_TRIGGERS
+- **Mechanism:** B6-style triggers skip market-closed hours for Alpaca (9:30-16:00 Mon-Fri). Kraken/Solana wall clock.
+
 
 ## 🟢 Live (measuring outcomes)
 
@@ -79,28 +104,6 @@ Source of truth: `autonomy_schedule.json`. Updated by Opus on ship/revert, surfa
 
 
 ## ⏸ Pending approval
-
-### ALPACA_MARKET_SENSE · alpaca_market_sense.py (priority 8)
-
-- **Gate:** ALPACA_SENTINEL_TRIGGERS shipped
-- **Target window:** 2026-04-26 20:00 ET
-- **Est build time:** 2h
-- **Expected protection:** ~$5-10/week
-- **Expected PnL lift:** ~$5-10/week
-- **Exit condition:** false-positive rate > 50% reconsider
-- **Files:** alpacabot/alpaca_market_sense.py (new), alpacabot/alpaca_engine.py
-- **Depends on:** ALPACA_SENTINEL_TRIGGERS
-- **Mechanism:** Market-hours gate, lunch chop block, earnings avoidance, SPY drift. Subsumes ALPACA_LUNCH_GATE.
-
-### AUTONOMY_GUARD_CLOCK_AWARE · Make autonomy_guard market-hours-aware (priority 9)
-
-- **Gate:** ALPACA_SENTINEL_TRIGGERS shipped
-- **Target window:** 2026-04-27 08:00 ET
-- **Est build time:** 1h
-- **Exit condition:** n/a
-- **Files:** supervisor/autonomy_guard.py
-- **Depends on:** ALPACA_SENTINEL_TRIGGERS
-- **Mechanism:** B6-style triggers skip market-closed hours for Alpaca (9:30-16:00 Mon-Fri). Kraken/Solana wall clock.
 
 ### COSMETIC_META_KEY · Skip _meta key in pair_status reader (cosmetic) (priority 11)
 
@@ -271,15 +274,6 @@ Source of truth: `autonomy_schedule.json`. Updated by Opus on ship/revert, surfa
 - **Depends on:** ALPACA_MARKET_SENSE, SOLANA_MARKET_SENSE
 - **Mechanism:** Abstract base class. Each sleeve implements interface. Sentinel calls framework. Pure refactor.
 
-### ALPACA_LUNCH_GATE · Alpaca lunch-hour entry block (priority 100)
-
-- **Gate:** Alpaca shows mid-day loss evidence (currently 5/5 clean — no signal)
-- **Target window:** on evidence
-- **Est build time:** 30m
-- **Exit condition:** defer until needed
-- **Files:** alpacabot/alpaca_engine.py
-- **Mechanism:** Block new alpaca entries 11:30-13:30 ET.
-
 ### WEEKEND_KRAKEN_GATE · Weekend Kraken posture gate (priority 101)
 
 - **Gate:** Weekend PnL data shows worse edge than weekdays
@@ -300,6 +294,18 @@ Source of truth: `autonomy_schedule.json`. Updated by Opus on ship/revert, surfa
 - **Mechanism:** Pair < 35% win rate over last 20 trades → auto-DISABLED_SOFT 7d. Operator veto at brief.
 
 
+## ❌ Reverted
+
+### ALPACA_LUNCH_GATE · Alpaca lunch-hour entry block (priority 100)
+
+- **Gate:** Alpaca shows mid-day loss evidence (currently 5/5 clean — no signal)
+- **Target window:** on evidence
+- **Est build time:** 30m
+- **Exit condition:** defer until needed
+- **Files:** alpacabot/alpaca_engine.py
+- **Mechanism:** Block new alpaca entries 11:30-13:30 ET.
+
+
 ---
 
-**Next up:** `ALPACA_MARKET_SENSE` — alpaca_market_sense.py
+**Next up:** `COSMETIC_META_KEY` — Skip _meta key in pair_status reader (cosmetic)

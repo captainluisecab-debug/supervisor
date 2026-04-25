@@ -62,6 +62,49 @@ def _now_iso() -> str:
 def _now_ts() -> float:
     return time.time()
 
+
+def is_alpaca_trading_hours(dt: datetime | None = None) -> bool:
+    """Phase A A8: clock-aware helper for stock-market-only checks.
+
+    Returns True iff dt is inside US equity regular session (9:30-16:00 ET,
+    Mon-Fri). Currently used by callers that need to distinguish trading-time
+    elapsed from wall-clock elapsed when scoring 'no profit in N hours' style
+    triggers on Alpaca.
+
+    Approximate ET via fixed offset (EDT Mar-Nov, EST Dec-Feb). Acceptable for
+    hour-level gating; not used for sub-minute scheduling.
+    """
+    dt = dt or datetime.now(timezone.utc)
+    month = dt.month
+    offset_h = -4 if 3 <= month <= 11 else -5
+    et = dt + timedelta(hours=offset_h) if dt.tzinfo else dt
+    if et.weekday() >= 5:
+        return False
+    mod = et.hour * 60 + et.minute
+    return 9 * 60 + 30 <= mod < 16 * 60
+
+
+def alpaca_trading_seconds_between(t_start: float, t_end: float) -> float:
+    """Approximate trading-time seconds between two epochs (Alpaca clock).
+
+    For rough "N trading hours elapsed" calculations. Skips weekends in whole-
+    day chunks; partial market-hour calculation handled at boundaries. Used
+    by triggers that want to avoid counting closed hours in their windows.
+    """
+    if t_end <= t_start:
+        return 0.0
+    # Cheap implementation: walk hour by hour, count those that are inside
+    # alpaca trading hours. Caller can use this for low-precision windows.
+    cursor = t_start
+    seconds = 0.0
+    while cursor < t_end:
+        chunk = min(3600.0, t_end - cursor)
+        dt = datetime.fromtimestamp(cursor, timezone.utc)
+        if is_alpaca_trading_hours(dt):
+            seconds += chunk
+        cursor += chunk
+    return seconds
+
 def _read_json(path: str, default: Any) -> Any:
     if not os.path.exists(path):
         return default

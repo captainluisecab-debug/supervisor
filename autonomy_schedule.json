@@ -2,7 +2,7 @@
   "_meta": {
     "description": "Persistent upgrade schedule. Owner: Opus (auto-updates on ship/revert). Read by opus_review.py for 08:00 AM / 08:00 PM packets. Read/update by operator at briefs.",
     "schema": "upgrades[]: {id, title, priority, status, approved_in_principle, gate, target_window, est_build_time, expected_protection_usd_per_week, exit_condition, files_touched, depends_on, notes, history[]}",
-    "last_update": "2026-04-25T00:41:22.492043+00:00",
+    "last_update": "2026-04-25T01:07:04.505760+00:00",
     "status_values": [
       "pending_approval",
       "approved",
@@ -294,7 +294,7 @@
       "id": "ALPACA_LUNCH_GATE",
       "title": "Alpaca lunch-hour entry block",
       "priority": 100,
-      "status": "deferred",
+      "status": "reverted",
       "approved_in_principle": false,
       "gate": "Alpaca shows mid-day loss evidence (currently 5/5 clean \u2014 no signal)",
       "target_window": "on evidence",
@@ -319,6 +319,12 @@
           "event": "considered_deferred",
           "by": "Opus",
           "note": "Alpaca 5/5 wins; no chop loss evidence yet"
+        },
+        {
+          "ts": "2026-04-25T01:07:04.505751+00:00",
+          "event": "status_change:deferred->reverted",
+          "by": "Opus",
+          "note": "Subsumed into ALPACA_MARKET_SENSE (A7) \u2014 same lunch_chop gate plus 4 additional gates."
         }
       ]
     },
@@ -655,7 +661,7 @@
       "id": "ALPACA_MARKET_SENSE",
       "title": "alpaca_market_sense.py",
       "priority": 8,
-      "status": "pending_approval",
+      "status": "built_awaiting_restart",
       "approved_in_principle": true,
       "gate": "ALPACA_SENTINEL_TRIGGERS shipped",
       "target_window": "2026-04-26 20:00 ET",
@@ -683,6 +689,12 @@
           "event": "proposed",
           "by": "Opus",
           "note": "parity-first restructure 2026-04-24"
+        },
+        {
+          "ts": "2026-04-25T01:07:04.487981+00:00",
+          "event": "status_change:pending_approval->built_awaiting_restart",
+          "by": "Opus",
+          "note": "alpaca_market_sense.py built with market hours, lunch chop, force-flat window, SPY drift gates. Earnings stub deferred (no calendar source). Wired into engine BUY loop. 6 smoke tests pass. Subsumes ALPACA_LUNCH_GATE deferred item."
         }
       ]
     },
@@ -690,7 +702,7 @@
       "id": "AUTONOMY_GUARD_CLOCK_AWARE",
       "title": "Make autonomy_guard market-hours-aware",
       "priority": 9,
-      "status": "pending_approval",
+      "status": "built_awaiting_restart",
       "approved_in_principle": true,
       "gate": "ALPACA_SENTINEL_TRIGGERS shipped",
       "target_window": "2026-04-27 08:00 ET",
@@ -723,6 +735,12 @@
           "event": "status_change:pending_approval->pending_approval",
           "by": "Opus",
           "note": "Renamed pending \u2014 was A8 in original sequence; deferred until A6b confirms in production."
+        },
+        {
+          "ts": "2026-04-25T01:07:04.498250+00:00",
+          "event": "status_change:pending_approval->built_awaiting_restart",
+          "by": "Opus",
+          "note": "Added is_alpaca_trading_hours() + alpaca_trading_seconds_between() helpers to autonomy_guard. B6-alpaca already event-based; helpers available for future trigger expansions."
         }
       ]
     },
