@@ -2,7 +2,7 @@
   "_meta": {
     "description": "Persistent upgrade schedule. Owner: Opus (auto-updates on ship/revert). Read by opus_review.py for 08:00 AM / 08:00 PM packets. Read/update by operator at briefs.",
     "schema": "upgrades[]: {id, title, priority, status, approved_in_principle, gate, target_window, est_build_time, expected_protection_usd_per_week, exit_condition, files_touched, depends_on, notes, history[]}",
-    "last_update": "2026-04-25T01:07:04.505760+00:00",
+    "last_update": "2026-04-25T01:49:03.381526+00:00",
     "status_values": [
       "pending_approval",
       "approved",
@@ -1087,6 +1087,102 @@
           "event": "proposed",
           "by": "Opus",
           "note": "parity-first restructure 2026-04-24"
+        }
+      ]
+    },
+    {
+      "id": "KRAKEN_FIX_MODE_TARGETS",
+      "title": "Fix 1: mode_targets overwrites Opus recs",
+      "priority": 1,
+      "status": "built_awaiting_restart",
+      "approved_in_principle": true,
+      "gate": "Operator approved 2026-04-25 \u2014 build now",
+      "target_window": "immediate",
+      "est_build_time": "30m",
+      "expected_protection_usd_per_week": [
+        20,
+        60
+      ],
+      "expected_pnl_improvement_usd_per_week": [
+        10,
+        30
+      ],
+      "exit_condition": "Verified by observing MIN_SCORE=88 persists in supervisor_override.json 3+ cycles after Opus review writes it",
+      "files_touched": [
+        "enzobot/supervisor_brain.py"
+      ],
+      "depends_on": [],
+      "mechanism": "mode_targets block MOVED BEFORE Opus apply_recommendations. Opus recs now override policy defaults instead of being overridden by them.",
+      "history": [
+        {
+          "ts": "2026-04-25T01:49:03.381509+00:00",
+          "event": "built",
+          "by": "Opus",
+          "note": "Operator-directed critical fix"
+        }
+      ]
+    },
+    {
+      "id": "KRAKEN_FIX_OPUS_PERSISTENCE",
+      "title": "Fix 2: Opus-applied params persist across cycles",
+      "priority": 2,
+      "status": "built_awaiting_restart",
+      "approved_in_principle": true,
+      "gate": "Same as Fix 1",
+      "target_window": "immediate",
+      "est_build_time": "45m",
+      "expected_protection_usd_per_week": [
+        30,
+        80
+      ],
+      "expected_pnl_improvement_usd_per_week": [
+        15,
+        40
+      ],
+      "exit_condition": "Verified by SCORE_DROP_EXIT=18 visible in supervisor_override.json 5+ cycles after first Opus write",
+      "files_touched": [
+        "enzobot/supervisor_brain.py",
+        "enzobot/brain_opus_applied.json (new)"
+      ],
+      "depends_on": [],
+      "mechanism": "New brain_opus_applied.json persists Opus-set params. Loaded each cycle, reapplied before Opus review; updated after Opus review. Opus recs survive non-review cycles instead of being wiped by rule-engine refresh.",
+      "history": [
+        {
+          "ts": "2026-04-25T01:49:03.381509+00:00",
+          "event": "built",
+          "by": "Opus"
+        }
+      ]
+    },
+    {
+      "id": "KRAKEN_FIX_FEE_COVERAGE",
+      "title": "Fix 3: fee-coverage entry gate (0.78% floor)",
+      "priority": 3,
+      "status": "built_awaiting_restart",
+      "approved_in_principle": true,
+      "gate": "Same as Fix 1",
+      "target_window": "immediate",
+      "est_build_time": "30m",
+      "expected_protection_usd_per_week": [
+        60,
+        150
+      ],
+      "expected_pnl_improvement_usd_per_week": [
+        30,
+        80
+      ],
+      "exit_condition": "7-day cumulative attribution: cohort of entries rejected by gate should have avg-loss worse than cohort of entries that passed",
+      "files_touched": [
+        "enzobot/engine.py",
+        "enzobot/policy.json"
+      ],
+      "depends_on": [],
+      "mechanism": "fee_cov_min_expected_move cfg (default 0.0078 = 1.5x Kraken round-trip fee). Applied in BUY execution loop + deploy_target generator. Rejects entries whose expected_move can't cover fees. FEE_COV_MIN_EXPECTED_MOVE [0.005, 0.020] in policy.json hard_bounds \u2014 brain/sentinel tunable.",
+      "history": [
+        {
+          "ts": "2026-04-25T01:49:03.381509+00:00",
+          "event": "built",
+          "by": "Opus"
         }
       ]
     }

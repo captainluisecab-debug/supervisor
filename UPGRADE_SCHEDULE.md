@@ -1,10 +1,43 @@
 # Upgrade Schedule
 
-_Last update: 2026-04-25T01:07:04.505760+00:00_
+_Last update: 2026-04-25T01:49:03.381526+00:00_
 
 Source of truth: `autonomy_schedule.json`. Updated by Opus on ship/revert, surfaced in 08:00 AM / 08:00 PM operator packets.
 
 ## ⏳ Built (awaiting restart)
+
+### KRAKEN_FIX_MODE_TARGETS · Fix 1: mode_targets overwrites Opus recs (priority 1)
+
+- **Gate:** Operator approved 2026-04-25 — build now
+- **Target window:** immediate
+- **Est build time:** 30m
+- **Expected protection:** ~$20-60/week
+- **Expected PnL lift:** ~$10-30/week
+- **Exit condition:** Verified by observing MIN_SCORE=88 persists in supervisor_override.json 3+ cycles after Opus review writes it
+- **Files:** enzobot/supervisor_brain.py
+- **Mechanism:** mode_targets block MOVED BEFORE Opus apply_recommendations. Opus recs now override policy defaults instead of being overridden by them.
+
+### KRAKEN_FIX_OPUS_PERSISTENCE · Fix 2: Opus-applied params persist across cycles (priority 2)
+
+- **Gate:** Same as Fix 1
+- **Target window:** immediate
+- **Est build time:** 45m
+- **Expected protection:** ~$30-80/week
+- **Expected PnL lift:** ~$15-40/week
+- **Exit condition:** Verified by SCORE_DROP_EXIT=18 visible in supervisor_override.json 5+ cycles after first Opus write
+- **Files:** enzobot/supervisor_brain.py, enzobot/brain_opus_applied.json (new)
+- **Mechanism:** New brain_opus_applied.json persists Opus-set params. Loaded each cycle, reapplied before Opus review; updated after Opus review. Opus recs survive non-review cycles instead of being wiped by rule-engine refresh.
+
+### KRAKEN_FIX_FEE_COVERAGE · Fix 3: fee-coverage entry gate (0.78% floor) (priority 3)
+
+- **Gate:** Same as Fix 1
+- **Target window:** immediate
+- **Est build time:** 30m
+- **Expected protection:** ~$60-150/week
+- **Expected PnL lift:** ~$30-80/week
+- **Exit condition:** 7-day cumulative attribution: cohort of entries rejected by gate should have avg-loss worse than cohort of entries that passed
+- **Files:** enzobot/engine.py, enzobot/policy.json
+- **Mechanism:** fee_cov_min_expected_move cfg (default 0.0078 = 1.5x Kraken round-trip fee). Applied in BUY execution loop + deploy_target generator. Rejects entries whose expected_move can't cover fees. FEE_COV_MIN_EXPECTED_MOVE [0.005, 0.020] in policy.json hard_bounds — brain/sentinel tunable.
 
 ### ALPACA_MARKET_SENSE · alpaca_market_sense.py (priority 8)
 
