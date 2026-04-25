@@ -1,6 +1,6 @@
 # Upgrade Schedule
 
-_Last update: 2026-04-24T13:40:14.881634+00:00_
+_Last update: 2026-04-25T00:41:22.492043+00:00_
 
 Source of truth: `autonomy_schedule.json`. Updated by Opus on ship/revert, surfaced in 08:00 AM / 08:00 PM operator packets.
 

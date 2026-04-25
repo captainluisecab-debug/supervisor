@@ -2,7 +2,7 @@
   "_meta": {
     "description": "Persistent upgrade schedule. Owner: Opus (auto-updates on ship/revert). Read by opus_review.py for 08:00 AM / 08:00 PM packets. Read/update by operator at briefs.",
     "schema": "upgrades[]: {id, title, priority, status, approved_in_principle, gate, target_window, est_build_time, expected_protection_usd_per_week, exit_condition, files_touched, depends_on, notes, history[]}",
-    "last_update": "2026-04-24T13:40:14.881634+00:00",
+    "last_update": "2026-04-25T00:41:22.492043+00:00",
     "status_values": [
       "pending_approval",
       "approved",
@@ -717,6 +717,12 @@
           "event": "proposed",
           "by": "Opus",
           "note": "parity-first restructure 2026-04-24"
+        },
+        {
+          "ts": "2026-04-25T00:41:22.492033+00:00",
+          "event": "status_change:pending_approval->pending_approval",
+          "by": "Opus",
+          "note": "Renamed pending \u2014 was A8 in original sequence; deferred until A6b confirms in production."
         }
       ]
     },
