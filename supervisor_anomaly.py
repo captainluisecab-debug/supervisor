@@ -19,6 +19,7 @@ import time
 from datetime import datetime, time as dtime, timezone
 from dataclasses import dataclass, field
 from typing import List, Optional
+from zoneinfo import ZoneInfo
 
 log = logging.getLogger("supervisor_anomaly")
 
@@ -279,18 +280,24 @@ class AnomalyDetector:
                 self._last_alpaca_cycle      = cycle
                 self._last_alpaca_cycle_seen = now
             elif now - self._last_alpaca_cycle_seen > CYCLE_FROZEN_SEC:
-                # Suppress during NYSE closed hours — alpacabot sleeps by design
-                utc_now = datetime.now(timezone.utc)
-                weekday = utc_now.weekday()  # 0=Mon ... 6=Sun
-                in_hours = (
-                    weekday < 5
-                    and dtime(14, 30) <= utc_now.time() <= dtime(21, 0)
-                )
-                if not in_hours:
-                    log.debug(
-                        "[ANOMALY] CYCLE_FROZEN_ALPACA suppressed — NYSE closed "
-                        "(weekday=%d, utc=%s)", weekday, utc_now.strftime("%H:%M")
+                # Suppress during NYSE closed hours — alpacabot sleeps by design.
+                # Use ET (zoneinfo) so DST is handled correctly; the previous
+                # fixed UTC range (14:30-21:00) only matched EST, not EDT.
+                try:
+                    et_now = datetime.now(ZoneInfo("America/New_York"))
+                    in_hours = (
+                        et_now.weekday() < 5
+                        and dtime(9, 30) <= et_now.time() <= dtime(16, 0)
                     )
+                except Exception:
+                    et_now = None
+                    in_hours = False
+                if not in_hours:
+                    if et_now is not None:
+                        log.debug(
+                            "[ANOMALY] CYCLE_FROZEN_ALPACA suppressed — NYSE closed "
+                            "(et=%s)", et_now.strftime("%a %H:%M")
+                        )
                     return None
                 return Anomaly(
                     code="CYCLE_FROZEN_ALPACA",

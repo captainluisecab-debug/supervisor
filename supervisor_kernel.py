@@ -141,6 +141,8 @@ def _check_regime_behavior_respected() -> List[str]:
         behavior = REGIME_BEHAVIOR.get(sleeve_regime, DEFAULT_BEHAVIOR)
         if behavior.get("entries_allowed") is False:
             cmd = _read_json(path)
+            if cmd.get("source") == "operator_override":
+                continue
             if cmd.get("entry_allowed") is True:
                 violations.append(
                     f"INV-3: {sleeve} regime={sleeve_regime} (no entries) "
