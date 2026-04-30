@@ -40,6 +40,14 @@ logging.basicConfig(
 )
 log = logging.getLogger("supervisor")
 
+# Color highlighting for stdout (file handler stays plain)
+try:
+    sys.path.insert(0, r"C:\Projects")
+    from log_colors import attach_color_formatter
+    attach_color_formatter(logging.getLogger())
+except Exception:
+    pass
+
 from supervisor_settings import (
     BRAIN_INTERVAL_CYCLES, CYCLE_SEC, HISTORY_FILE,
     REPORT_FILE, STOP_FILE, TOTAL_BASELINE,
