@@ -73,12 +73,12 @@ REGIME_BEHAVIOR = {
         "description": "Scout mode. Small entries allowed. Reduced sizing. Learn from ranging conditions.",
     },
     "TRENDING_DOWN": {
-        "mode": "FLAT",
-        "entries_allowed": False,
-        "size_mult": 0.0,
-        "max_positions": 0,
-        "reduce_positions": True,   # actively close everything near breakeven
-        "description": "Go flat. Hold cash. Wait for regime change.",
+        "mode": "SCOUT",
+        "entries_allowed": True,
+        "size_mult": 0.3,
+        "max_positions": 2,
+        "reduce_positions": False,
+        "description": "Operator-relaxed 2026-04-29 (was FLAT). SCOUT mode — allow trader-driven counter-trend longs. Trader's classifier (8-state) gates each entry; Controllers + sentinel restrict universe to BTC/NEAR; per-pair stop+size discipline preserved. No force_flatten on existing positions.",
     },
     "VOLATILE": {
         "mode": "REDUCE",
@@ -697,6 +697,26 @@ def evaluate_kraken(enzo_state: dict, exits: List[dict], cycle: int,
     dd = enzo_state.get("dd_pct", 0)
     pair_regime = enzo_state.get("pair_regime", {})
 
+    # ── Operator soft-retire short-circuit ────────────────────────────
+    # If commands/kraken_retire.flag exists, enzobot is retired per
+    # operator decision 2026-05-16 (Period C closure). Always emit
+    # DEFENSE / size=0 / entry_allowed=False. force_flatten=False:
+    # do NOT force-close existing positions; let them exit on their own
+    # rules. Bot is currently flat. Reversal: delete the flag file.
+    _retire_flag = os.path.join(BASE_DIR, "commands", "kraken_retire.flag")
+    if os.path.exists(_retire_flag):
+        decisions.append(GovernorDecision(
+            ts=now_iso, cycle=cycle, action="SOFT_RETIRE", sleeve="kraken",
+            reason="Operator soft-retire active (kraken_retire.flag present) — entries permanently blocked",
+            shadow=SHADOW_MODE, metrics={"equity": round(equity, 2), "dd_pct": round(dd, 2),
+                                          "open_positions": enzo_state.get("open_positions", 0)},
+            classification="BLOCK",
+        ))
+        _write_command_file(CMD_KRAKEN, "DEFENSE", 0.0, False,
+                            "Governor: enzobot soft-retired (operator 2026-05-16)",
+                            "kraken", force_flatten=False)
+        return decisions
+
     # Classify dominant regime
     dominant = classify_dominant_regime(pair_regime)
     behavior = get_regime_behavior(dominant)
@@ -1056,7 +1076,7 @@ def evaluate_alpaca(alpaca_state: dict, cycle: int, supervisor_regime: str,
             reason=f"Regime={supervisor_regime} -> TRADE.",
             shadow=SHADOW_MODE, metrics=metrics,
         ))
-        _write_command_file(CMD_ALPACA, "NORMAL", 0.7, True,
+        _write_command_file(CMD_ALPACA, "NORMAL", 1.0, True,
                             f"Governor TRADE: {supervisor_regime}", "alpaca",
                             dominant_regime_override=supervisor_regime)
 
