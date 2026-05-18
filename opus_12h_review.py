@@ -679,11 +679,16 @@ def main():
             response = f"Strategic directive written. Assessment: {directive.get('universe_assessment', 'N/A')[:100]}"
             print(f"[OPUS 12H REVIEW] Strategic review COMPLETE: {response}")
         else:
-            response = "Strategic review returned empty (no API key or error)"
-            print(f"[OPUS 12H REVIEW] {response}")
+            # run_strategic_review() returned empty dict.
+            # Cause: missing API key OR API call failed (credit balance, rate limit, network).
+            # The strategic_review function already emits [FATAL] / [ANOMALY] via its logger;
+            # mirror an [ANOMALY] line to stdout so the scheduled-task console output is greppable.
+            response = ("STRATEGIC_REVIEW_RETURNED_EMPTY — directive NOT updated "
+                        "(see supervisor.log for [FATAL]/[ANOMALY] root cause)")
+            print(f"[OPUS 12H REVIEW] [ANOMALY] {response}")
     except Exception as exc:
-        response = f"Strategic review failed: {exc}"
-        print(f"[OPUS 12H REVIEW] {response}")
+        response = f"STRATEGIC_REVIEW_THREW: {exc}"
+        print(f"[OPUS 12H REVIEW] [ANOMALY] {response}")
 
     print(f"[OPUS 12H REVIEW] Done ({len(prompt)} chars prompt)")
 

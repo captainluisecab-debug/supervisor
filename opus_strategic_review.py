@@ -150,7 +150,11 @@ def run_strategic_review() -> dict:
     """
     api_key = _load_api_key()
     if not api_key:
-        log.warning("[STRATEGIC] No API key — skipping review")
+        # Loud: this is operationally fatal — the strategic review cannot run.
+        # anomalies.py reader greps for [FATAL] and [ANOMALY] tags.
+        log.error("[FATAL] STRATEGIC_API_KEY_MISSING — "
+                  "ANTHROPIC_API_KEY not found in supervisor/.env. "
+                  "Strategic review SKIPPED; opus_strategic_directive.json will go stale.")
         return {}
 
     context = gather_universe_context()
@@ -268,10 +272,14 @@ Respond ONLY with valid JSON in this format:
         return directive
 
     except json.JSONDecodeError as exc:
-        log.error("[STRATEGIC] Opus returned non-JSON: %s", exc)
+        # Loud: anomalies.py reader greps for [ANOMALY].
+        log.error("[ANOMALY] STRATEGIC_REVIEW_NON_JSON — "
+                  "Opus returned non-JSON content: %s", exc)
         return {}
     except Exception as exc:
-        log.error("[STRATEGIC] Review failed: %s", exc)
+        # Loud: covers 400 credit-balance, 429 rate-limit, network errors,
+        # SDK exceptions. Was [STRATEGIC] (invisible to anomalies.py).
+        log.error("[ANOMALY] STRATEGIC_REVIEW_FAILED — %s", exc)
         return {}
 
 

@@ -11,6 +11,8 @@ INVARIANTS:
   3. Regime behavior respected  — FLAT/REDUCE regime = no entries in command files
   4. Expectancy freeze respected — below threshold = no entries (Kraken only)
   5. Lane integrity             — all command files written by Governor
+  6. Strategic directive freshness — opus_strategic_directive.json <14h old
+                                    (Option A: log-only [ANOMALY], does NOT halt kernel)
 
 GOAL: Increase positive PnL by catching invariant violations before they
 propagate to bot behavior.
@@ -183,6 +185,51 @@ def _check_lane_integrity() -> List[str]:
     return violations
 
 
+def _check_strategic_directive_freshness() -> List[str]:
+    """INV-6: opus_strategic_directive.json must be <14h old (Option A: log-only).
+
+    Rationale: scheduled strategic review runs every 12h. 14h = one missed
+    cycle + 2h grace. Staler than 14h means the strategic review pipeline
+    is broken (missing API key, API call failure, schedule misfire) and
+    governor's strategic_size_mult adjustments are reading stale state.
+    Governor's own consumption sites at supervisor_governor.py:524 and
+    :1157 already gate on 14h via _parse_ts; INV-6 makes that staleness
+    LOUD at the KERNEL level so anomalies.py picks it up.
+
+    Option A behavior (per L-007 + operator decision 2026-05-17):
+      - Emits [ANOMALY] STRATEGIC_DIRECTIVE_* via log.warning when stale,
+        missing, or in the future.
+      - Returns [] always — does NOT contribute to KERNEL halt count.
+      - Preserves the 8-day operating tolerance: governor cycles continue
+        regardless of directive freshness, but the failure is now visible.
+    """
+    path = os.path.join(BASE_DIR, "opus_strategic_directive.json")
+    if not os.path.exists(path):
+        log.warning(
+            "[ANOMALY] STRATEGIC_DIRECTIVE_MISSING — "
+            "opus_strategic_directive.json does not exist; "
+            "strategic review never produced output"
+        )
+        return []
+    age_h = (time.time() - os.path.getmtime(path)) / 3600.0
+    if age_h < 0:
+        log.warning(
+            "[ANOMALY] STRATEGIC_DIRECTIVE_FUTURE_MTIME — "
+            "opus_strategic_directive.json mtime IN FUTURE by %.1fh "
+            "(clock skew or manual touch)",
+            -age_h,
+        )
+    elif age_h > 14:
+        log.warning(
+            "[ANOMALY] STRATEGIC_DIRECTIVE_STALE — "
+            "opus_strategic_directive.json age=%.1fh > 14h threshold "
+            "(strategic review pipeline failed; see [STRATEGIC]/[ANOMALY] "
+            "lines in supervisor.log)",
+            age_h,
+        )
+    return []
+
+
 # ── Main entry point ────────────────────────────────────────────────
 def run_kernel(cycle: int) -> KernelResult:
     """Run all invariant checks. Returns PASS or HALT."""
@@ -194,13 +241,14 @@ def run_kernel(cycle: int) -> KernelResult:
         log.warning("[KERNEL] BYPASS active — returning PASS unconditionally")
         return KernelResult(status="PASS", checked_at=now, duration_ms=0)
 
-    # Run all five invariant checks
+    # Run all six invariant checks
     violations = []
     violations.extend(_check_force_flatten_consistency())
     violations.extend(_check_dd_override_respected())
     violations.extend(_check_regime_behavior_respected())
     violations.extend(_check_expectancy_freeze_respected())
     violations.extend(_check_lane_integrity())
+    violations.extend(_check_strategic_directive_freshness())  # INV-6 Option A: log-only
 
     duration_ms = int((time.monotonic() - t0) * 1000)
     status = "HALT" if violations else "PASS"
@@ -214,7 +262,7 @@ def run_kernel(cycle: int) -> KernelResult:
 
     # Log
     if status == "PASS":
-        log.info("[KERNEL] PASS - 5/5 invariants clean (cycle %d)", cycle)
+        log.info("[KERNEL] PASS - 6/6 invariants clean (cycle %d)", cycle)
     else:
         log.warning("[KERNEL] HALT - %d violation(s) detected (cycle %d)",
                      len(violations), cycle)
