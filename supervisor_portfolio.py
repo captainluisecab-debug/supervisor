@@ -15,6 +15,7 @@ from supervisor_settings import (
     ALPACA_API_KEY, ALPACA_BASELINE, ALPACA_SECRET_KEY, ALPACA_STATE,
     ENZOBOT_BASELINE, ENZOBOT_BRAIN, ENZOBOT_STATE,
     SFMBOT_BASELINE, SFMBOT_STATE, TOTAL_BASELINE,
+    ZEROBOT_BASELINE, ZEROBOT_BRAIN,
 )
 
 log = logging.getLogger("supervisor_portfolio")
@@ -219,11 +220,62 @@ def read_alpacabot() -> SleeveState:
     )
 
 
+def read_zerobot() -> SleeveState:
+    """Read ZeroBot brain_state.json — Donchian-20 BTC paper sleeve (Phase 2).
+
+    Pattern mirrors read_alpacabot(): if state file missing/unreadable, return
+    baseline with health=GOOD + offline note. No Kraken API call (paper mode).
+    Per L-009 (Loophole D mitigation): zerobot's .env clobbers os.environ for
+    safety-critical vars, so this sleeve is GUARANTEED paper mode regardless of
+    user env vars.
+    """
+    brain = _read_json(ZEROBOT_BRAIN)
+    if not brain:
+        return SleeveState(
+            name="zerobot_btc",
+            equity_usd=ZEROBOT_BASELINE, baseline_usd=ZEROBOT_BASELINE,
+            pnl_usd=0.0, pnl_pct=0.0, drawdown_pct=0.0,
+            open_positions=0, mode="OFFLINE", cycle=0, health="GOOD",
+            notes=["brain_state.json not found — bot not running or first start"],
+        )
+
+    equity = float(brain.get("equity_usd", ZEROBOT_BASELINE))
+    pnl_usd = equity - ZEROBOT_BASELINE
+    pnl_pct = (pnl_usd / ZEROBOT_BASELINE * 100) if ZEROBOT_BASELINE > 0 else 0.0
+    # dd_pct is stored as a fraction (0.0-1.0) per zerobot/engine.py:194; convert to %.
+    dd_pct = -float(brain.get("dd_pct", 0.0)) * 100.0
+    open_positions = 1 if brain.get("has_position") else 0
+    cycle = int(brain.get("cycle", 0))
+    mode = str(brain.get("mode", "NORMAL"))
+
+    notes = []
+    last_reason = str(brain.get("last_reason", ""))
+    if last_reason:
+        notes.append(f"last: {brain.get('last_action','?')} ({last_reason[:40]})")
+    if brain.get("dd_brake_active"):
+        notes.append("DD BRAKE ACTIVE — operator clear required")
+
+    return SleeveState(
+        name="zerobot_btc",
+        equity_usd=equity,
+        baseline_usd=ZEROBOT_BASELINE,
+        pnl_usd=pnl_usd,
+        pnl_pct=pnl_pct,
+        drawdown_pct=dd_pct,
+        open_positions=open_positions,
+        mode=mode,
+        cycle=cycle,
+        health=_health(pnl_pct, dd_pct),
+        notes=notes,
+    )
+
+
 def build_portfolio(peak_equity: float = 0.0) -> PortfolioState:
     sleeves = {
         "kraken_crypto": read_enzobot(),
         "sfm_tactical":  read_sfmbot(),
         "alpaca_stocks": read_alpacabot(),
+        "zerobot_btc":   read_zerobot(),
     }
 
     total_equity = sum(s.equity_usd for s in sleeves.values())

@@ -95,6 +95,8 @@ DEFAULT_BEHAVIOR = REGIME_BEHAVIOR["RANGING"]  # conservative default
 CMD_KRAKEN  = os.path.join(BASE_DIR, "commands", "kraken_cmd.json")
 CMD_SFM     = os.path.join(BASE_DIR, "commands", "sfm_cmd.json")
 CMD_ALPACA  = os.path.join(BASE_DIR, "commands", "alpaca_cmd.json")
+CMD_ZEROBOT = os.path.join(BASE_DIR, "commands", "zerobot_cmd.json")
+ZEROBOT_DIR = r"C:\Projects\zerobot"
 # Kraken single source of truth — governor consolidates all inputs every cycle
 KRAKEN_TRUTH_FILE = os.path.join(BASE_DIR, "kraken_state_truth.json")
 
@@ -420,6 +422,36 @@ def _read_alpaca_state() -> dict:
         "open_positions": len(positions),
         "breakeven_armed": list(state.get("breakeven_armed", [])),
         "pair_regime": dict(state.get("pair_regime", {}) or {}),
+    }
+
+
+def _read_zerobot_state() -> dict:
+    """Read zerobot brain_state.json — Donchian-20 BTC paper sleeve.
+
+    Returns governor-compatible dict. brain_state is engine's authoritative
+    state snapshot per cycle. Paper sleeve, baseline $3,408. Per L-009
+    (Loophole D), zerobot is guaranteed paper regardless of user env vars.
+    """
+    brain = _read_json(os.path.join(ZEROBOT_DIR, "brain_state.json"))
+    baseline = 3408.0
+    equity = float(brain.get("equity_usd", baseline))
+    # dd_pct in brain_state is a fraction (0.0-1.0); convert to % for governor.
+    dd_frac = float(brain.get("dd_pct", 0.0))
+    dd_pct = -dd_frac * 100.0
+    has_pos = bool(brain.get("has_position", False))
+    return {
+        "sleeve": "zerobot",
+        "equity": equity,
+        "dd_pct": dd_pct,
+        "realized_pnl": equity - baseline,  # paper: total return is the proxy
+        "total_trades": 0,                   # not tracked in brain_state
+        "winning_trades": 0,
+        "losing_trades": 0,
+        "open_positions": 1 if has_pos else 0,
+        "consecutive_losses": int(brain.get("consecutive_losses", 0)),
+        "dd_brake_active": bool(brain.get("dd_brake_active", False)),
+        "mode": str(brain.get("mode", "NORMAL")),
+        # No pair_regime — zerobot uses its OWN SMA-50 macro filter, not regime classifier.
     }
 
 
@@ -1129,6 +1161,91 @@ def evaluate_alpaca(alpaca_state: dict, cycle: int, supervisor_regime: str,
     return decisions
 
 
+def evaluate_zerobot(zerobot_state: dict, cycle: int, supervisor_regime: str,
+                     hermes_advisory: dict = None) -> List[GovernorDecision]:
+    """Evaluate ZeroBot sleeve. Operator-locked strategy — governor's role is
+    mode-gating only, NO parameter tuning per spec §7.3.
+
+    Per L-009 (Loophole D): zerobot is GUARANTEED paper regardless of user env vars.
+
+    Per plan §4: ZeroBot's strategy has its own SMA-50 macro filter (gates entries
+    when price < SMA-50). Crypto-regime TRENDING_DOWN would block exactly the
+    contrarian breakouts the Donchian-20 rule is designed to catch. So governor
+    is gentle: only force DEFENSE on FLAT/REDUCE/MIXED regimes; lets the strategy
+    decide on TRENDING_UP / RANGING / TRENDING_DOWN / UNKNOWN.
+    """
+    now_iso = datetime.now(timezone.utc).isoformat()
+
+    behavior = get_regime_behavior(supervisor_regime)
+    regime_mode = behavior["mode"]
+
+    metrics = {
+        "equity": round(zerobot_state.get("equity", 0), 2),
+        "open_positions": zerobot_state.get("open_positions", 0),
+        "consecutive_losses": zerobot_state.get("consecutive_losses", 0),
+        "dd_brake_active": zerobot_state.get("dd_brake_active", False),
+        "regime": supervisor_regime,
+        "regime_mode": regime_mode,
+    }
+
+    decisions = []
+
+    # ZeroBot decision matrix (per plan §4 + REGIME_BEHAVIOR actual mappings):
+    #   regime_mode == "REDUCE" (= VOLATILE regime)  -> ZEROBOT_SCOUT (block entries)
+    #   else (TRENDING_UP/RANGING/TRENDING_DOWN/etc) -> ZEROBOT_TRADE_ACTIVE
+    # Rationale: zerobot's own SMA-50 macro filter blocks entries in bear markets;
+    # governor doesn't need to also block on TRENDING_DOWN (double-gating loses
+    # exactly the contrarian Donchian-20 breakouts the rule is designed to catch,
+    # e.g., 2020-03 bottom). The Universe DD circuit breaker (below) handles the
+    # cross-sleeve cascade case automatically once zerobot is in SLEEVE_CMD_MAP.
+    if regime_mode == "REDUCE":
+        decisions.append(GovernorDecision(
+            ts=now_iso, cycle=cycle, action="ZEROBOT_SCOUT", sleeve="zerobot",
+            reason=f"Regime={supervisor_regime} (mode=REDUCE) -> SCOUT (block new entries; held positions ride out).",
+            shadow=SHADOW_MODE, metrics=metrics,
+        ))
+        _write_command_file(CMD_ZEROBOT, "SCOUT", 0.5, False,
+                            f"Governor SCOUT: regime={supervisor_regime}", "zerobot",
+                            dominant_regime_override=supervisor_regime)
+    else:
+        # TRADE: governor signals NORMAL but the strategy's own gates still apply
+        decisions.append(GovernorDecision(
+            ts=now_iso, cycle=cycle, action="ZEROBOT_TRADE_ACTIVE", sleeve="zerobot",
+            reason=f"Regime={supervisor_regime} -> NORMAL (strategy's own gates apply).",
+            shadow=SHADOW_MODE, metrics=metrics,
+        ))
+        _write_command_file(CMD_ZEROBOT, "NORMAL", 1.0, True,
+                            f"Governor NORMAL: regime={supervisor_regime}", "zerobot",
+                            dominant_regime_override=supervisor_regime)
+
+    # Hermes DD advisory override (tighten-only): mirrors alpaca pattern.
+    # Currently hermes_context.compute_advisory() doesn't include a "zerobot" key
+    # (Phase-3 prereq per Bug-3); .get("zerobot", {}) returns empty so no override fires.
+    _zb_dd = zerobot_state.get("dd_pct", 0)
+    _hermes_entry = (hermes_advisory or {}).get("zerobot", {}).get("entry_allowed", True)
+    if not _hermes_entry:
+        decisions.append(GovernorDecision(
+            ts=now_iso, cycle=cycle, action="HERMES_DD_OVERRIDE", sleeve="zerobot",
+            reason=f"Hermes advisory: entry_allowed=false (DD={_zb_dd:.1f}%) — tighten-only override",
+            shadow=SHADOW_MODE, metrics=metrics,
+        ))
+        _write_command_file(CMD_ZEROBOT, "DEFENSE", 0.0, False,
+                            f"Governor: Hermes DD override (DD={_zb_dd:.1f}%)", "zerobot",
+                            dominant_regime_override=supervisor_regime)
+        log.info("[GOVERNOR] ZeroBot Hermes DD override: entry_allowed=false (DD=%.1f%%)", _zb_dd)
+
+    if decisions:
+        actions = {d.action for d in decisions}
+        if "HERMES_DD_OVERRIDE" in actions:
+            decisions[0].classification = "OVERRIDE"
+        elif "ZEROBOT_TRADE_ACTIVE" in actions:
+            decisions[0].classification = "ALLOW"
+        else:
+            decisions[0].classification = "REDUCE"
+
+    return decisions
+
+
 # ── Main entry point ──────────────────────────────────────────────────
 
 def run_governor(cycle: int) -> List[GovernorDecision]:
@@ -1144,6 +1261,7 @@ def run_governor(cycle: int) -> List[GovernorDecision]:
     enzo = _read_enzobot_state()
     sfm = _read_sfm_state()
     alpaca = _read_alpaca_state()
+    zerobot = _read_zerobot_state()
 
     # Read Hermes context (advisory input — governor decides, Hermes advises)
     _hermes_ctx = _read_json(os.path.join(BASE_DIR, "hermes_context.json"))
@@ -1196,6 +1314,9 @@ def run_governor(cycle: int) -> List[GovernorDecision]:
     all_decisions.extend(evaluate_kraken(enzo, kraken_exits, cycle, _hermes_advisory))
     all_decisions.extend(evaluate_sfm(sfm, cycle, crypto_regime, _hermes_advisory))
     all_decisions.extend(evaluate_alpaca(alpaca, cycle, stock_regime, _hermes_advisory))
+    # ZeroBot: paper Donchian-20 BTC sleeve. Uses crypto_regime (BTC-driven)
+    # but the strategy's own SMA-50 macro filter is the primary gate (per L-009/spec §7.3).
+    all_decisions.extend(evaluate_zerobot(zerobot, cycle, crypto_regime, _hermes_advisory))
 
     # ── Cross-sleeve correlation guard ─────────────────────────────────
     # If both crypto sleeves (Kraken + SFM) are >70% deployed AND BTC dropped
@@ -1219,7 +1340,7 @@ def run_governor(cycle: int) -> List[GovernorDecision]:
 
     # ── Universe DD circuit breaker ──────────────────────────────────
     # If total universe equity drops >5% in any 4h window, all sleeves go DEFENSE.
-    _total_eq_now = enzo.get("equity", 0) + sfm.get("equity", 0) + alpaca.get("equity", 0)
+    _total_eq_now = enzo.get("equity", 0) + sfm.get("equity", 0) + alpaca.get("equity", 0) + zerobot.get("equity", 0)
     if not hasattr(run_governor, "_equity_history"):
         run_governor._equity_history = []
     run_governor._equity_history.append((_total_eq_now, time.time()))
@@ -1233,7 +1354,7 @@ def run_governor(cycle: int) -> List[GovernorDecision]:
                 now_iso = datetime.now(timezone.utc).isoformat()
                 log.warning("[GOVERNOR] UNIVERSE CIRCUIT BREAKER: equity dropped %.1f%% "
                             "in 4h ($%.2f -> $%.2f) — ALL DEFENSE", _uni_dd_4h, _oldest_eq, _total_eq_now)
-                for _sleeve, _cmd_path in [("kraken", CMD_KRAKEN), ("sfm", CMD_SFM), ("alpaca", CMD_ALPACA)]:
+                for _sleeve, _cmd_path in [("kraken", CMD_KRAKEN), ("sfm", CMD_SFM), ("alpaca", CMD_ALPACA), ("zerobot", CMD_ZEROBOT)]:
                     _write_command_file(_cmd_path, "DEFENSE", 0.0, False,
                                         f"Governor: universe circuit breaker — {_uni_dd_4h:.1f}% in 4h",
                                         _sleeve, force_flatten=False)

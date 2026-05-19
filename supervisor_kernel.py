@@ -39,7 +39,7 @@ KRAKEN_TRUTH_FILE = os.path.join(BASE_DIR, "kraken_state_truth.json")
 
 # Import constants and paths from Governor (single source of truth)
 from supervisor_governor import (
-    CMD_KRAKEN, CMD_SFM, CMD_ALPACA,
+    CMD_KRAKEN, CMD_SFM, CMD_ALPACA, CMD_ZEROBOT,
     REGIME_BEHAVIOR, DEFAULT_BEHAVIOR,
     EXPECTANCY_FREEZE_THRESHOLD,
     ENZOBOT_DIR, ALPACA_DIR,
@@ -50,10 +50,18 @@ from supervisor_governor import (
 EXIT_LOG = os.path.join(ENZOBOT_DIR, "logs", "exit_counterfactuals.jsonl")
 
 SLEEVE_CMD_MAP = {
-    "kraken": CMD_KRAKEN,
-    "sfm": CMD_SFM,
-    "alpaca": CMD_ALPACA,
+    "kraken":  CMD_KRAKEN,
+    "sfm":     CMD_SFM,
+    "alpaca":  CMD_ALPACA,
+    "zerobot": CMD_ZEROBOT,
 }
+
+# INV-3 (regime behavior) skip-list. ZeroBot has its OWN SMA-50 macro filter
+# baked into strategy.entry_allowed — applying governor's regime gate would
+# create double-gating that BLOCKS contrarian Donchian-20 breakouts during
+# crypto bear markets (the trades the rule is designed to catch).
+# Per Opus plan §4 + D-010.
+INV3_SKIP_SLEEVES = frozenset({"zerobot"})
 
 
 # ── Result ───────────────────────────────────────────────────────────
@@ -133,12 +141,15 @@ def _check_regime_behavior_respected() -> List[str]:
     alpaca_dominant = classify_dominant_regime(alpaca_pair_regime) if alpaca_pair_regime else "RANGING"
 
     sleeve_regimes = {
-        "kraken": crypto_dominant,
-        "sfm":    crypto_dominant,
-        "alpaca": alpaca_dominant,
+        "kraken":  crypto_dominant,
+        "sfm":     crypto_dominant,
+        "alpaca":  alpaca_dominant,
+        "zerobot": crypto_dominant,  # listed for completeness; skipped via INV3_SKIP_SLEEVES below
     }
 
     for sleeve, path in SLEEVE_CMD_MAP.items():
+        if sleeve in INV3_SKIP_SLEEVES:
+            continue  # strategy.entry_allowed gates internally (Opus plan §4)
         sleeve_regime = sleeve_regimes.get(sleeve, crypto_dominant)
         behavior = REGIME_BEHAVIOR.get(sleeve_regime, DEFAULT_BEHAVIOR)
         if behavior.get("entries_allowed") is False:

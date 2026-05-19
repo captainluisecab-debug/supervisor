@@ -23,16 +23,19 @@ log = logging.getLogger("supervisor_unified")
 _BASE_ENZOBOT  = r"C:\Projects\enzobot"
 _BASE_SFM      = r"C:\Projects\sfmbot"
 _BASE_ALPACA   = r"C:\Projects\alpacabot"
+_BASE_ZEROBOT  = r"C:\Projects\zerobot"
 
 ENZOBOT_STATE_PATH  = os.environ.get("ENZOBOT_STATE",  os.path.join(_BASE_ENZOBOT, "state.json"))
 ENZOBOT_BRAIN_PATH  = os.environ.get("ENZOBOT_BRAIN",  os.path.join(_BASE_ENZOBOT, "brain_state.json"))
 SFMBOT_STATE_PATH   = os.environ.get("SFMBOT_STATE",   os.path.join(_BASE_SFM,     "solana_state.json"))
 ALPACA_STATE_PATH   = os.environ.get("ALPACA_STATE",   os.path.join(_BASE_ALPACA,  "alpaca_state.json"))
+ZEROBOT_BRAIN_PATH  = os.environ.get("ZEROBOT_BRAIN",  os.path.join(_BASE_ZEROBOT, "brain_state.json"))
 
 # Capital baselines (mirrors supervisor_settings.py defaults)
 _ENZOBOT_BASELINE = float(os.environ.get("ENZOBOT_BASELINE", "4000.00"))
 _SFMBOT_BASELINE  = float(os.environ.get("SFMBOT_BASELINE",  "2350.87"))
 _ALPACA_BASELINE  = float(os.environ.get("ALPACA_BASELINE",  "500.00"))
+_ZEROBOT_BASELINE = float(os.environ.get("ZEROBOT_BASELINE", "3408.00"))
 
 
 # ── Data classes ─────────────────────────────────────────────────────
@@ -293,39 +296,97 @@ def _read_alpacabot() -> BotSnapshot:
     )
 
 
+def _read_zerobot() -> BotSnapshot:
+    """
+    zerobot brain_state.json structure (written by zerobot/engine.py:178-209):
+      ts, ts_iso, cycle, mode, health, pair, equity_usd, equity_peak_usd, dd_pct,
+      has_position, position_qty, position_avg_price, last_action, last_reason,
+      consecutive_losses, dd_brake_active
+
+    Paper sleeve (Phase 2). Per L-009 (Loophole D), zerobot is GUARANTEED paper
+    regardless of user env vars (zerobot/settings.py clobbers safety-critical vars).
+    """
+    brain, age = _load_json(ZEROBOT_BRAIN_PATH)
+
+    if not brain and age < 0:
+        return BotSnapshot(
+            name="zerobot", equity=_ZEROBOT_BASELINE, cash=_ZEROBOT_BASELINE,
+            deployed_usd=0.0, dd_pct=0.0, open_positions=[],
+            realized_pnl=0.0, total_trades=0, win_rate=0.0,
+            state_age_sec=-1.0, ok=False,
+        )
+
+    equity   = float(brain.get("equity_usd", _ZEROBOT_BASELINE))
+    # zerobot dd_pct is stored as a fraction (0.0-1.0); convert to %.
+    dd_pct   = -float(brain.get("dd_pct", 0.0)) * 100.0
+    has_pos  = bool(brain.get("has_position", False))
+    pos_qty  = float(brain.get("position_qty", 0.0))
+    pos_avg  = float(brain.get("position_avg_price", 0.0))
+    rpnl     = equity - _ZEROBOT_BASELINE  # paper sleeve: equity-baseline = realized + unrealized
+
+    positions_out = []
+    deployed = 0.0
+    if has_pos and pos_qty > 0 and pos_avg > 0:
+        deployed = pos_qty * pos_avg  # mark at cost (no live BTC price here)
+        positions_out.append({
+            "symbol":        str(brain.get("pair", "BTC/USD")),
+            "entry_price":   pos_avg,
+            "current_value": deployed,  # marked at cost; engine's brain_state lags WS by one cycle
+            "pnl_pct":       0.0,       # not tracked in brain_state schema
+            "bot":           "zerobot",
+        })
+
+    # zerobot strategy is single-rule Donchian-20; "trades" = entries since start.
+    # No total_trades / winning_trades field in brain_state — derive proxy if needed later.
+    return BotSnapshot(
+        name="zerobot",
+        equity=equity,
+        cash=max(equity - deployed, 0.0),
+        deployed_usd=deployed,
+        dd_pct=dd_pct,
+        open_positions=positions_out,
+        realized_pnl=rpnl,
+        total_trades=0,
+        win_rate=-1.0,
+        state_age_sec=age,
+    )
+
+
 # ── Main unified reader ───────────────────────────────────────────────
 
 def read_unified_portfolio() -> UnifiedPortfolio:
-    """Read all 3 bot states and return a unified view. Never raises."""
-    enzo  = _read_enzobot()
-    sfm   = _read_sfmbot()
-    alpaca = _read_alpacabot()
+    """Read all 4 bot states and return a unified view. Never raises."""
+    enzo    = _read_enzobot()
+    sfm     = _read_sfmbot()
+    alpaca  = _read_alpacabot()
+    zerobot = _read_zerobot()
 
     bots = {
         "enzobot":   enzo,
         "sfmbot":    sfm,
         "alpacabot": alpaca,
+        "zerobot":   zerobot,
     }
 
-    total_equity   = enzo.equity   + sfm.equity   + alpaca.equity
-    total_cash     = enzo.cash     + sfm.cash     + alpaca.cash
-    total_deployed = enzo.deployed_usd + sfm.deployed_usd + alpaca.deployed_usd
+    total_equity   = enzo.equity   + sfm.equity   + alpaca.equity   + zerobot.equity
+    total_cash     = enzo.cash     + sfm.cash     + alpaca.cash     + zerobot.cash
+    total_deployed = enzo.deployed_usd + sfm.deployed_usd + alpaca.deployed_usd + zerobot.deployed_usd
 
-    # Crypto = enzobot (Kraken) + sfmbot (Solana) deployed
-    crypto_exposure = enzo.deployed_usd + sfm.deployed_usd
+    # Crypto = enzobot (Kraken) + sfmbot (Solana) + zerobot (BTC) deployed
+    crypto_exposure = enzo.deployed_usd + sfm.deployed_usd + zerobot.deployed_usd
     # Equity (stocks) = alpacabot deployed
     equity_exposure = alpaca.deployed_usd
 
-    # Weighted drawdown across all three bots (baseline-weighted).
-    # sfm/alpaca use a baseline-anchored proxy (no equity_peak in their state files).
-    total_baseline = _ENZOBOT_BASELINE + _SFMBOT_BASELINE + _ALPACA_BASELINE
+    # Weighted drawdown across all four bots (baseline-weighted).
+    total_baseline = _ENZOBOT_BASELINE + _SFMBOT_BASELINE + _ALPACA_BASELINE + _ZEROBOT_BASELINE
     total_dd_pct   = (
-        enzo.dd_pct   * _ENZOBOT_BASELINE +
-        sfm.dd_pct    * _SFMBOT_BASELINE  +
-        alpaca.dd_pct * _ALPACA_BASELINE
+        enzo.dd_pct    * _ENZOBOT_BASELINE +
+        sfm.dd_pct     * _SFMBOT_BASELINE  +
+        alpaca.dd_pct  * _ALPACA_BASELINE  +
+        zerobot.dd_pct * _ZEROBOT_BASELINE
     ) / total_baseline if total_baseline > 0 else 0.0
 
-    all_positions = enzo.open_positions + sfm.open_positions + alpaca.open_positions
+    all_positions = enzo.open_positions + sfm.open_positions + alpaca.open_positions + zerobot.open_positions
 
     return UnifiedPortfolio(
         total_equity=total_equity,

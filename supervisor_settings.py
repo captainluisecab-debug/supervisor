@@ -38,6 +38,7 @@ ENZOBOT_STATE  = _s("ENZOBOT_STATE",  r"C:\Projects\enzobot\state.json")
 ENZOBOT_BRAIN  = _s("ENZOBOT_BRAIN",  r"C:\Projects\enzobot\brain_state.json")
 SFMBOT_STATE   = _s("SFMBOT_STATE",   r"C:\Projects\sfmbot\solana_state.json")
 ALPACA_STATE   = _s("ALPACA_STATE",   r"C:\Projects\alpacabot\alpaca_state.json")
+ZEROBOT_BRAIN  = _s("ZEROBOT_BRAIN",  r"C:\Projects\zerobot\brain_state.json")
 
 # Alpaca live account
 ALPACA_API_KEY    = _s("ALPACA_API_KEY")
@@ -47,7 +48,8 @@ ALPACA_SECRET_KEY = _s("ALPACA_SECRET_KEY")
 ENZOBOT_BASELINE = _f("ENZOBOT_BASELINE", 4000.00)
 SFMBOT_BASELINE  = _f("SFMBOT_BASELINE",  2350.87)
 ALPACA_BASELINE  = _f("ALPACA_BASELINE",  500.00)
-TOTAL_BASELINE   = ENZOBOT_BASELINE + SFMBOT_BASELINE + ALPACA_BASELINE
+ZEROBOT_BASELINE = _f("ZEROBOT_BASELINE", 3408.00)
+TOTAL_BASELINE   = ENZOBOT_BASELINE + SFMBOT_BASELINE + ALPACA_BASELINE + ZEROBOT_BASELINE
 
 # Risk thresholds
 KILL_SWITCH_DD_PCT    = _f("KILL_SWITCH_DD_PCT", 10.0)
@@ -66,6 +68,7 @@ STOP_FILE     = os.path.join(BASE_DIR, "EMERGENCY_STOP.txt")
 COMMANDS_DIR  = os.path.join(BASE_DIR, "commands")
 
 # Per-bot command files (supervisor writes, bots read)
-CMD_KRAKEN = os.path.join(COMMANDS_DIR, "kraken_cmd.json")
-CMD_SFM    = os.path.join(COMMANDS_DIR, "sfm_cmd.json")
-CMD_ALPACA = os.path.join(COMMANDS_DIR, "alpaca_cmd.json")
+CMD_KRAKEN  = os.path.join(COMMANDS_DIR, "kraken_cmd.json")
+CMD_SFM     = os.path.join(COMMANDS_DIR, "sfm_cmd.json")
+CMD_ALPACA  = os.path.join(COMMANDS_DIR, "alpaca_cmd.json")
+CMD_ZEROBOT = os.path.join(COMMANDS_DIR, "zerobot_cmd.json")

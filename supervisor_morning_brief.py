@@ -32,9 +32,10 @@ LAST_FIRED_FILE = os.path.join(BASE_DIR, "morning_brief_last.json")
 
 COMMANDS_DIR = os.path.join(BASE_DIR, "commands")
 CMD_FILES = {
-    "kraken": os.path.join(COMMANDS_DIR, "kraken_cmd.json"),
-    "sfm":    os.path.join(COMMANDS_DIR, "sfm_cmd.json"),
-    "alpaca": os.path.join(COMMANDS_DIR, "alpaca_cmd.json"),
+    "kraken":  os.path.join(COMMANDS_DIR, "kraken_cmd.json"),
+    "sfm":     os.path.join(COMMANDS_DIR, "sfm_cmd.json"),
+    "alpaca":  os.path.join(COMMANDS_DIR, "alpaca_cmd.json"),
+    "zerobot": os.path.join(COMMANDS_DIR, "zerobot_cmd.json"),
 }
 
 # Fire window: 9:00–9:14 AM ET (14:00–14:14 UTC during EDT)
@@ -167,12 +168,20 @@ def generate_brief(portfolio, regime, allocations, recent_outcomes,
         "kraken_crypto": "KRAKEN CRYPTO",
         "sfm_tactical":  "SFM TACTICAL ",
         "alpaca_stocks": "ALPACA STOCKS",
+        "zerobot_btc":   "ZEROBOT BTC  ",
+    }
+    # Map sleeve_labels key -> CMD_FILES key (cmd lookup expects the bot-name prefix)
+    _cmd_key_map = {
+        "kraken_crypto": "kraken",
+        "sfm_tactical":  "sfm",
+        "alpaca_stocks": "alpaca",
+        "zerobot_btc":   "zerobot",
     }
     for key, label in sleeve_labels.items():
         s = portfolio.sleeves.get(key)
         if not s:
             continue
-        cmd_key = key.split("_")[0]  # kraken / sfm / alpaca
+        cmd_key = _cmd_key_map.get(key, key.split("_")[0])
         cmd = _read_cmd(cmd_key)
         health_flag = "  <-- WARN" if s.health == "WARN" else ("  <-- CRITICAL" if s.health == "CRITICAL" else "")
         _entry_str = "YES" if cmd.get("entry_allowed", True) else "NO"

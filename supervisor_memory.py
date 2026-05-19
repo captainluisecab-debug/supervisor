@@ -116,15 +116,17 @@ def save_pending(decision: dict, portfolio, regime=None) -> None:
     pending = {
         "ts": datetime.now(timezone.utc).isoformat(),
         "decision": {
-            "kraken": decision.get("kraken", {}),
-            "sfm":    decision.get("sfm", {}),
-            "alpaca": decision.get("alpaca", {}),
+            "kraken":  decision.get("kraken",  {}),
+            "sfm":     decision.get("sfm",     {}),
+            "alpaca":  decision.get("alpaca",  {}),
+            "zerobot": decision.get("zerobot", {}),
         },
         "equity_before": {
-            "kraken": sleeves.get("kraken_crypto").equity_usd if sleeves.get("kraken_crypto") else 0,
-            "sfm":    sleeves.get("sfm_tactical").equity_usd  if sleeves.get("sfm_tactical")  else 0,
-            "alpaca": sleeves.get("alpaca_stocks").equity_usd if sleeves.get("alpaca_stocks") else 0,
-            "total":  portfolio.total_equity,
+            "kraken":  sleeves.get("kraken_crypto").equity_usd if sleeves.get("kraken_crypto") else 0,
+            "sfm":     sleeves.get("sfm_tactical").equity_usd  if sleeves.get("sfm_tactical")  else 0,
+            "alpaca":  sleeves.get("alpaca_stocks").equity_usd if sleeves.get("alpaca_stocks") else 0,
+            "zerobot": sleeves.get("zerobot_btc").equity_usd   if sleeves.get("zerobot_btc")   else 0,
+            "total":   portfolio.total_equity,
         },
         "regime": {
             "label": regime.regime,
@@ -179,9 +181,10 @@ def evaluate_and_log(portfolio) -> Optional[BrainOutcome]:
     regime_at_decision = pending.get("regime")  # dict or None
 
     sleeve_map = {
-        "kraken": ("kraken_crypto", "kraken"),
-        "sfm":    ("sfm_tactical",  "sfm"),
-        "alpaca": ("alpaca_stocks", "alpaca"),
+        "kraken":  ("kraken_crypto", "kraken"),
+        "sfm":     ("sfm_tactical",  "sfm"),
+        "alpaca":  ("alpaca_stocks", "alpaca"),
+        "zerobot": ("zerobot_btc",   "zerobot"),
     }
 
     # ── Scan execution log for fills within the decision window ─────────
