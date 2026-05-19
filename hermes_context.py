@@ -32,6 +32,8 @@ BASE_DIR    = os.path.dirname(os.path.abspath(__file__))
 ENZOBOT_DIR = r"C:\Projects\enzobot"
 SFMBOT_DIR  = r"C:\Projects\sfmbot"
 ALPACA_DIR  = r"C:\Projects\alpacabot"
+ZEROBOT_DIR = r"C:\Projects\zerobot"
+_ZEROBOT_BASELINE = 3408.0   # mirrors supervisor_settings.ZEROBOT_BASELINE; D-004 capital allocation
 
 CONTEXT_FILE = os.path.join(BASE_DIR, "hermes_context.json")
 HISTORY_FILE = os.path.join(BASE_DIR, "hermes_history.jsonl")
@@ -334,6 +336,60 @@ def _read_alpaca() -> dict:
     }
 
 
+def _read_zerobot() -> dict:
+    """Read zerobot brain_state.json — Donchian-20 BTC paper sleeve (D-010).
+
+    brain_state.json is written every engine cycle (300s) by zerobot/engine.py:178-209.
+    Field `dd_pct` is a NON-NEGATIVE FRACTION (0.0-1.0); convert to negative-percent
+    convention used by _sleeve_advisory (mirrors supervisor_governor.py:439-440).
+
+    Staleness handling: if brain_state.json is missing OR age > 600s (2 cycles),
+    treat the sleeve as OFFLINE and emit `stale=True`. Downstream advisory defaults
+    to entry_allowed=True so absence-of-evidence does not BLOCK trading (conservative
+    — don't act on stale DD readings). Operator visibility via the advisory's
+    `reasoning` note + the OFFLINE escalation in _detect_events().
+
+    Future-mtime guard (per L-007 INV-6 pattern): if age_sec < 0 (clock skew or
+    manual touch), treat as stale.
+    """
+    path = os.path.join(ZEROBOT_DIR, "brain_state.json")
+    if not os.path.exists(path):
+        return {"sleeve": "zerobot", "equity": _ZEROBOT_BASELINE, "dd_pct": 0.0,
+                "open_position": False, "consecutive_losses": 0,
+                "dd_brake_active": False, "stale": True,
+                "stale_reason": "BRAIN_STATE_MISSING", "age_sec": -1}
+    brain = _read_json(path)
+    if not brain:
+        return {"sleeve": "zerobot", "equity": _ZEROBOT_BASELINE, "dd_pct": 0.0,
+                "open_position": False, "consecutive_losses": 0,
+                "dd_brake_active": False, "stale": True,
+                "stale_reason": "BRAIN_STATE_UNREADABLE", "age_sec": -1}
+    age_sec = time.time() - float(brain.get("ts", 0))
+    if age_sec < 0:
+        # Future-mtime (clock skew or manual touch). Treat as stale to be safe.
+        return {"sleeve": "zerobot",
+                "equity": float(brain.get("equity_usd", _ZEROBOT_BASELINE)),
+                "dd_pct": 0.0, "open_position": False,
+                "consecutive_losses": 0, "dd_brake_active": False,
+                "stale": True, "stale_reason": "BRAIN_STATE_FUTURE_MTIME",
+                "age_sec": age_sec}
+    is_stale = age_sec > 600
+    equity = float(brain.get("equity_usd", _ZEROBOT_BASELINE))
+    dd_frac = float(brain.get("dd_pct", 0.0))
+    dd_pct_neg = -dd_frac * 100.0   # convert to negative-percent convention
+    return {
+        "sleeve": "zerobot",
+        "equity": equity,
+        "dd_pct": 0.0 if is_stale else dd_pct_neg,   # don't act on stale DD
+        "open_position": bool(brain.get("has_position", False)),
+        "consecutive_losses": int(brain.get("consecutive_losses", 0)),
+        "dd_brake_active": bool(brain.get("dd_brake_active", False)),
+        "stale": is_stale,
+        "stale_reason": "BRAIN_STATE_STALE" if is_stale else None,
+        "age_sec": age_sec,
+    }
+
+
 # ── Brain replacement: deterministic advisory ─────────────────────────
 
 def _sleeve_advisory(regime_label: str, dd_pct: float, sleeve: str) -> dict:
@@ -355,21 +411,36 @@ def _sleeve_advisory(regime_label: str, dd_pct: float, sleeve: str) -> dict:
 
 
 def compute_advisory(regime_label: str, kraken_dd: float,
-                     sfm_dd: float = 0.0, alpaca_dd: float = 0.0) -> dict:
-    """Per-sleeve deterministic advisory. Each sleeve uses its own DD."""
+                     sfm_dd: float = 0.0, alpaca_dd: float = 0.0,
+                     zerobot_dd: float = 0.0,
+                     zerobot_offline: bool = False) -> dict:
+    """Per-sleeve deterministic advisory. Each sleeve uses its own DD.
+
+    zerobot key added 2026-05-18 per D-011 prereq #2 (Phase 3 safety net).
+    If zerobot_offline=True (brain_state.json missing/stale), force entry_allowed=True
+    (conservative — don't block on absence of evidence); flag OFFLINE in reasoning.
+    """
     k = _sleeve_advisory(regime_label, kraken_dd, "kraken")
     s = _sleeve_advisory(regime_label, sfm_dd, "sfm")
     a = _sleeve_advisory(regime_label, alpaca_dd, "alpaca")
+    if zerobot_offline:
+        z = {"mode": "NORMAL", "size_mult": 1.0, "entry_allowed": True,
+             "reasoning": "Hermes advisory: zerobot OFFLINE "
+                          "(brain_state stale or missing) — defaulting to allow; investigate"}
+    else:
+        z = _sleeve_advisory(regime_label, zerobot_dd, "zerobot")
     return {
-        "kraken": k, "sfm": s, "alpaca": a,
-        "note": f"Hermes advisory: {regime_label}, K={kraken_dd:.1f}% S={sfm_dd:.1f}% A={alpaca_dd:.1f}%",
+        "kraken": k, "sfm": s, "alpaca": a, "zerobot": z,
+        "note": f"Hermes advisory: {regime_label}, K={kraken_dd:.1f}% "
+                f"S={sfm_dd:.1f}% A={alpaca_dd:.1f}% Z={zerobot_dd:.1f}%"
+                + (" (OFFLINE)" if zerobot_offline else ""),
     }
 
 
 # ── Event detection ───────────────────────────────────────────────────
 
-def _detect_events(kraken: dict, sfm: dict, alpaca: dict, regime: str,
-                    execution_truth: dict = None) -> List[dict]:
+def _detect_events(kraken: dict, sfm: dict, alpaca: dict, zerobot: dict,
+                    regime: str, execution_truth: dict = None) -> List[dict]:
     """Detect significant events worth logging. Only logs state CHANGES."""
     events = []
     now_iso = datetime.now(timezone.utc).isoformat()
@@ -416,6 +487,15 @@ def _detect_events(kraken: dict, sfm: dict, alpaca: dict, regime: str,
     if alpaca.get("dd_pct", 0) < -10:
         escalations.append({"severity": "HIGH", "type": "alpaca_dd_critical",
                             "detail": f"Alpaca DD at {alpaca.get('dd_pct', 0):.1f}% — below -10% threshold",
+                            "ts": now_iso})
+    if zerobot.get("dd_pct", 0) < -10:
+        escalations.append({"severity": "HIGH", "type": "zerobot_dd_critical",
+                            "detail": f"ZeroBot DD at {zerobot.get('dd_pct', 0):.1f}% — below -10% threshold",
+                            "ts": now_iso})
+    if zerobot.get("stale", False):
+        escalations.append({"severity": "MEDIUM", "type": "zerobot_offline",
+                            "detail": f"ZeroBot brain_state {zerobot.get('stale_reason','STALE')} "
+                                      f"(age={zerobot.get('age_sec', -1):.0f}s); advisory defaulting to allow",
                             "ts": now_iso})
 
     # Authority violation escalation — dedup against already-escalated violations
@@ -470,9 +550,12 @@ def build_context(regime_label: str, regime_confidence: float) -> dict:
     kraken = _read_kraken()
     sfm = _read_sfm()
     alpaca = _read_alpaca()
+    zerobot = _read_zerobot()
 
-    universe_eq = kraken.get("equity", 0) + sfm.get("equity", 0) + alpaca.get("equity", 0)
-    universe_pnl = universe_eq - 6969.62
+    universe_eq = (kraken.get("equity", 0) + sfm.get("equity", 0)
+                   + alpaca.get("equity", 0) + zerobot.get("equity", 0))
+    # Baseline updated 2026-05-18: 6969.62 + 3408.0 (zerobot D-004 sleeve) = 10377.62
+    universe_pnl = universe_eq - 10377.62
     now = time.time()
     now_iso = datetime.now(timezone.utc).isoformat()
 
@@ -482,6 +565,7 @@ def build_context(regime_label: str, regime_confidence: float) -> dict:
         "kraken_eq": round(kraken.get("equity", 0), 2),
         "sfm_eq": round(sfm.get("equity", 0), 2),
         "alpaca_eq": round(alpaca.get("equity", 0), 2),
+        "zerobot_eq": round(zerobot.get("equity", 0), 2),
         "kraken_positions": kraken.get("open_positions", 0),
     })
     while len(_pnl_history) > 288:
@@ -496,7 +580,7 @@ def build_context(regime_label: str, regime_confidence: float) -> dict:
     execution_truth = _read_execution_truth()
 
     # Detect events (including authority violations from execution truth)
-    events = _detect_events(kraken, sfm, alpaca, regime_label, execution_truth)
+    events = _detect_events(kraken, sfm, alpaca, zerobot, regime_label, execution_truth)
     _event_log.extend(events)
     while len(_event_log) > 100:
         _event_log.pop(0)
@@ -591,6 +675,8 @@ def build_context(regime_label: str, regime_confidence: float) -> dict:
         kraken_dd=kraken.get("dd_pct", 0),
         sfm_dd=sfm.get("dd_pct", 0),
         alpaca_dd=alpaca.get("dd_pct", 0),
+        zerobot_dd=zerobot.get("dd_pct", 0),
+        zerobot_offline=zerobot.get("stale", False),
     )
 
     context = {
@@ -601,7 +687,7 @@ def build_context(regime_label: str, regime_confidence: float) -> dict:
         "universe": {
             "equity": round(universe_eq, 2),
             "pnl_vs_baseline": round(universe_pnl, 2),
-            "pnl_pct": round(universe_pnl / 6969.62 * 100, 2),
+            "pnl_pct": round(universe_pnl / 10377.62 * 100, 2),
             "delta_1h": round(universe_eq - pnl_1h_ago, 2) if pnl_1h_ago else None,
             "delta_12h": round(universe_eq - pnl_12h_ago, 2) if pnl_12h_ago else None,
         },
@@ -610,6 +696,7 @@ def build_context(regime_label: str, regime_confidence: float) -> dict:
         "kraken": kraken,
         "sfm": sfm,
         "alpaca": alpaca,
+        "zerobot": zerobot,
 
         # Regime
         "regime": {
