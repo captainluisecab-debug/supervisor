@@ -279,15 +279,16 @@ def _run_cycle(cycle: int, peak_equity: float, anomaly_detector: AnomalyDetector
 def main() -> None:
     log.info("=" * 65)
     log.info("MASTER SUPERVISOR v2 — Phase 2: UNIFIED CLAUDE BRAIN")
-    log.info("Total baseline: $%.2f across 3 sleeves", TOTAL_BASELINE)
+    log.info("Total baseline: $%.2f across 4 sleeves", TOTAL_BASELINE)
     log.info("Cycle: %ds | Brain: every %d cycles (~%dm)",
              CYCLE_SEC, BRAIN_INTERVAL_CYCLES,
              CYCLE_SEC * BRAIN_INTERVAL_CYCLES // 60)
     log.info("=" * 65)
     log.info("Sleeves:")
-    log.info("  kraken_crypto  — core growth engine    (enzobot)")
+    log.info("  kraken_crypto  — core growth engine    (enzobot, soft-retired per D-001)")
     log.info("  sfm_tactical   — tactical booster      (sfmbot)")
     log.info("  alpaca_stocks  — stable compounder     (alpacabot)")
+    log.info("  zerobot_btc    — Donchian-20 BTC       (zerobot, paper through 2026-06-01)")
     log.info("=" * 65)
 
     peak_equity = _load_peak()

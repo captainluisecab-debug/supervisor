@@ -159,9 +159,9 @@ def run_strategic_review() -> dict:
 
     context = gather_universe_context()
 
-    prompt = f"""You are the Chief Strategy Officer for a 3-bot live trading system managing ${context['portfolio']['total_equity']:.2f} of REAL MONEY.
+    prompt = f"""You are the Chief Strategy Officer for a 4-bot live trading system managing ${context['portfolio']['total_equity']:.2f} of REAL MONEY.
 
-Your job: analyze the last 12 hours of performance across all 3 sleeves and produce SPECIFIC, ACTIONABLE directives for the next 12 hours. Every recommendation must be backed by the outcome data below.
+Your job: analyze the last 12 hours of performance across all 4 sleeves and produce SPECIFIC, ACTIONABLE directives for the next 12 hours. Every recommendation must be backed by the outcome data below.
 
 PORTFOLIO STATE:
 {json.dumps(context['portfolio'], indent=2)}
