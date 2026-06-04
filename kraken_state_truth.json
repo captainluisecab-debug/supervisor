@@ -1,10 +1,34 @@
 {
-  "ts": "2026-04-02T00:00:00Z",
+  "ts": "2026-06-04T12:54:05.733865+00:00",
   "source": "governor",
-  "note": "Single source of truth for Kraken state. Written by governor every cycle. All other files are component-owned inputs.",
-  "command": {},
-  "portfolio": {},
-  "brain": {},
-  "positions": {},
-  "regime": {}
+  "effective_posture": "SOFT_RETIRE",
+  "force_flatten": false,
+  "portfolio": {
+    "equity": 3408.611256512005,
+    "cash": 3408.611256512005,
+    "dd_pct": -3.799172490901892,
+    "open_positions": 0
+  },
+  "brain_mode": "DEFEND",
+  "regime": {
+    "dominant": "TRENDING_DOWN",
+    "pair_regime": {
+      "BTC/USD": "DOWN",
+      "ETH/USD": "DOWN",
+      "XRP/USD": "DOWN",
+      "POL/USD": "DOWN",
+      "NEAR/USD": "DOWN"
+    }
+  },
+  "governor_decisions": [
+    {
+      "action": "SOFT_RETIRE",
+      "reason": "Operator soft-retire active (kraken_retire.flag present) \u2014 entries permanently blocked"
+    }
+  ],
+  "command": {
+    "mode": "DEFENSE",
+    "size_mult": 0.0,
+    "entry_allowed": false
+  }
 }

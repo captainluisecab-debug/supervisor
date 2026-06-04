@@ -1,0 +1,146 @@
+# Operator Brief — 2026-06-04 Thu 07:50 ET (11:50 UTC)
+
+**Window active labels:** morning, pre-market, pre_market
+**Look-back window:** 12h — from 2026-06-03 Wed 19:50 ET (23:50 UTC) to 2026-06-04 Thu 07:50 ET (11:50 UTC)
+
+---
+
+## Posture by sleeve
+
+| Sleeve | Mode | Entry | Force-flat | Regime | cmd age |
+|---|---|---|---|---|---|
+| Kraken | DEFENSE | False | False | TRENDING_DOWN | 4m |
+| SFM | DEFENSE | False | False | TRENDING_DOWN | 4m |
+| Alpaca | NORMAL | True | False | TRENDING_UP | 4m |
+
+---
+
+## Equity / positions
+
+### Kraken (enzobot)
+- Equity: **$3408.61** (peak $3543.22, dd -3.80%)
+- Cash: $3408.61
+- Realized PnL (account-lifetime): $-420.37
+- Open positions: 0
+
+### Alpaca
+- Realized PnL: $57.06 (peak $1076.56)
+- Trades: 65 | Wins: 36 | Win rate: 55%
+- Open positions: 2
+
+### Solana (sfmbot)
+- Equity: USDC $0.00 + SOL $4.92 = $4.92 (peak $2049.12)
+- Realized PnL: $142.87 | Trades: 8
+
+### Total universe equity: **$3970.59**
+
+---
+
+## Kernel status (last 10 cycles)
+
+- PASS: 10 | HALT: 0
+- Last entry: cycle=4087 status=PASS violations=[]
+
+---
+
+## Kraken activity (last 12h)
+
+- Total exits: 0
+
+---
+
+## Brain activity — Kraken (last 12h)
+
+- Decisions: 100
+- Mode distribution: OBSERVE=36, DEFEND=64
+- Last decision: mode=DEFEND reason=down_pairs=100%
+
+---
+
+## Sentinel fires (last 12h)
+
+- Total fires: 6
+- `2026-06-04T01:20:59` B12_loss_streak_universe [ACTIVE] → ISSUE_FILED:ISSUE-486 (ISSUE-486)
+  rationale: 8 consecutive losing exits universe-wide (threshold 5). Total streak PnL $-26.36. Current entry logic is not producing wins — strategy misaligned with
+- `2026-06-04T03:21:32` B12_loss_streak_universe [ACTIVE] → ISSUE_FILED:ISSUE-487 (ISSUE-487)
+  rationale: 8 consecutive losing exits universe-wide (threshold 5). Total streak PnL $-26.36. Current entry logic is not producing wins — strategy misaligned with
+- `2026-06-04T05:22:06` B12_loss_streak_universe [ACTIVE] → ISSUE_FILED:ISSUE-488 (ISSUE-488)
+  rationale: 8 consecutive losing exits universe-wide (threshold 5). Total streak PnL $-26.36. Current entry logic is not producing wins — strategy misaligned with
+- `2026-06-04T07:22:42` B12_loss_streak_universe [ACTIVE] → ISSUE_FILED:ISSUE-489 (ISSUE-489)
+  rationale: 8 consecutive losing exits universe-wide (threshold 5). Total streak PnL $-26.36. Current entry logic is not producing wins — strategy misaligned with
+- `2026-06-04T09:23:17` B12_loss_streak_universe [ACTIVE] → ISSUE_FILED:ISSUE-490 (ISSUE-490)
+  rationale: 8 consecutive losing exits universe-wide (threshold 5). Total streak PnL $-26.36. Current entry logic is not producing wins — strategy misaligned with
+- `2026-06-04T11:23:53` B12_loss_streak_universe [ACTIVE] → ISSUE_FILED:ISSUE-491 (ISSUE-491)
+  rationale: 8 consecutive losing exits universe-wide (threshold 5). Total streak PnL $-26.36. Current entry logic is not producing wins — strategy misaligned with
+
+---
+
+## Autonomy activity (last 12h)
+
+- Writes: 6
+- Verdicts: HELPED=0 NEUTRAL=0 HURT=0 PENDING=6
+  - kraken: 6 writes (pair_status:XRP/USD×6)
+---
+
+## Upgrade schedule
+
+| ID | Title | Status | Gate / next action |
+|---|---|---|---|
+| KRAKEN_FIX_MODE_TARGETS | Fix 1: mode_targets overwrites Opus recs | built_awaiting_restart | Operator approved 2026-04-25 — build now |
+| KRAKEN_FIX_OPUS_PERSISTENCE | Fix 2: Opus-applied params persist across cycles | built_awaiting_restart | Same as Fix 1 |
+| KRAKEN_FIX_FEE_COVERAGE | Fix 3: fee-coverage entry gate (0.78% floor) | built_awaiting_restart | Same as Fix 1 |
+| ALPACA_MARKET_SENSE | alpaca_market_sense.py | built_awaiting_restart | ALPACA_SENTINEL_TRIGGERS shipped |
+| AUTONOMY_GUARD_CLOCK_AWARE | Make autonomy_guard market-hours-aware | built_awaiting_restart | ALPACA_SENTINEL_TRIGGERS shipped |
+| B12 | Loss-streak universe pause | live | 8 AM 2026-04-24 brief: clean overnight autonomy stac... |
+| ALPACA_EXIT_LEDGER | Alpaca exit counterfactuals ledger | live | Next window; operator green-light |
+| ALPACA_STATE_SCHEMA_UNIFY | Unify alpaca_state.json field names | live | Same window |
+| ALPACA_PAIR_STATUS | Alpaca pair_status.json read path | live | A1+A2 shipped |
+| ALPACA_SENTINEL_OVERRIDE_READ | Alpaca sentinel_override.json read path | live | ALPACA_PAIR_STATUS shipped |
+| ALPACA_PARAM_BOUNDS_EXPAND | Expand ALPACA PARAM_BOUNDS | live | ALPACA_SENTINEL_OVERRIDE_READ shipped |
+| ALPACA_SENTINEL_TRIGGERS | Alpaca sentinel triggers (B2/B4/B6/B12 adapted) | live | All foundation pieces shipped |
+| COSMETIC_META_KEY | Skip _meta key in pair_status reader (cosmetic) | pending_approval | Trivial 2-line fix during next maintenance window. O... |
+| REVIEW_ISSUE_PARSER | Fix opus_review.py open-issue counter + parser | pending_approval | Trivial parser fix. Non-blocking. Operator ack at 8 AM. |
+| BTC_DOM_GATE | BTC dominance gate for Kraken alts | pending_approval | B12 validated clean for 24h + operator green-light a... |
+| POST_FLIP_COOLDOWN | Post-regime-flip observation cooldown | pending_approval | B12 + BTC_DOM_GATE both validated clean + operator g... |
+| SOLANA_RECAP_DECISION | Operator decision: Solana sleeve recap + new pair | pending_approval | Operator call at brief |
+| SOLANA_EXIT_LEDGER | Solana exit counterfactuals ledger | pending_approval | SOLANA_RECAP_DECISION resolved |
+| SOLANA_STATE_SCHEMA_UNIFY | Unify sfm/solana state schema | pending_approval | SOLANA_RECAP_DECISION resolved |
+| SOLANA_PAIR_STATUS | Solana pair_status.json read path | pending_approval | SOLANA_EXIT_LEDGER+SCHEMA shipped |
+| SOLANA_SENTINEL_OVERRIDE_READ | Solana sentinel_override.json read path | pending_approval | SOLANA_PAIR_STATUS shipped |
+| SOLANA_PARAM_BOUNDS_EXPAND | Expand SOLANA PARAM_BOUNDS | pending_approval | SOLANA_SENTINEL_OVERRIDE_READ shipped |
+| SOLANA_SENTINEL_TRIGGERS | Solana sentinel triggers | pending_approval | All Solana foundation shipped |
+| SOLANA_MARKET_SENSE | solana_market_sense.py (slippage + pool + gas) | pending_approval | SOLANA_SENTINEL_TRIGGERS shipped |
+| SOLANA_RPC_HEALTH | Solana RPC health + failover | pending_approval | SOLANA_MARKET_SENSE shipped |
+
+**Next up:** `COSMETIC_META_KEY` — Skip _meta key in pair_status reader (cosmetic) (target 2026-04-24 08:00 ET)
+---
+
+## Open issues
+
+- Count: 200
+- **ISSUE-482** [MEDIUM] LOSS_STREAK_UNIVERSE_WIDE (opus_sentinel)
+  8 consecutive losing exits universe-wide (threshold 5). Total streak PnL $-26.36. Current entry logic is not producing w
+- **ISSUE-483** [MEDIUM] LOSS_STREAK_UNIVERSE_WIDE (opus_sentinel)
+  8 consecutive losing exits universe-wide (threshold 5). Total streak PnL $-26.36. Current entry logic is not producing w
+- **ISSUE-484** [MEDIUM] LOSS_STREAK_UNIVERSE_WIDE (opus_sentinel)
+  8 consecutive losing exits universe-wide (threshold 5). Total streak PnL $-26.36. Current entry logic is not producing w
+- **ISSUE-485** [MEDIUM] LOSS_STREAK_UNIVERSE_WIDE (opus_sentinel)
+  8 consecutive losing exits universe-wide (threshold 5). Total streak PnL $-26.36. Current entry logic is not producing w
+- **ISSUE-486** [MEDIUM] LOSS_STREAK_UNIVERSE_WIDE (opus_sentinel)
+  8 consecutive losing exits universe-wide (threshold 5). Total streak PnL $-26.36. Current entry logic is not producing w
+- **ISSUE-487** [MEDIUM] LOSS_STREAK_UNIVERSE_WIDE (opus_sentinel)
+  8 consecutive losing exits universe-wide (threshold 5). Total streak PnL $-26.36. Current entry logic is not producing w
+- **ISSUE-488** [MEDIUM] LOSS_STREAK_UNIVERSE_WIDE (opus_sentinel)
+  8 consecutive losing exits universe-wide (threshold 5). Total streak PnL $-26.36. Current entry logic is not producing w
+- **ISSUE-489** [MEDIUM] LOSS_STREAK_UNIVERSE_WIDE (opus_sentinel)
+  8 consecutive losing exits universe-wide (threshold 5). Total streak PnL $-26.36. Current entry logic is not producing w
+- **ISSUE-490** [MEDIUM] LOSS_STREAK_UNIVERSE_WIDE (opus_sentinel)
+  8 consecutive losing exits universe-wide (threshold 5). Total streak PnL $-26.36. Current entry logic is not producing w
+- **ISSUE-491** [MEDIUM] LOSS_STREAK_UNIVERSE_WIDE (opus_sentinel)
+  8 consecutive losing exits universe-wide (threshold 5). Total streak PnL $-26.36. Current entry logic is not producing w
+
+---
+
+## Recommended next actions
+
+- System stable. No operator action required this window.

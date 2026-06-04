@@ -1,5 +1,12 @@
 .env
 *.env
+.env.*
+
+# Backups — code .bak clutter + CREDENTIAL-bearing .env.bak (NEVER push live keys)
+*.bak
+*.bak.*
+.env.bak.*
+
 supervisor_report.json
 supervisor_history.jsonl
 logs/

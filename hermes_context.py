@@ -453,7 +453,7 @@ def _detect_events(kraken: dict, sfm: dict, alpaca: dict, zerobot: dict,
     # PnL milestone (every $25 change)
     if _pnl_history:
         last_eq = _pnl_history[-1].get("universe_eq", 0)
-        curr_eq = kraken.get("equity", 0) + sfm.get("equity", 0) + alpaca.get("equity", 0)
+        curr_eq = kraken.get("equity", 0) + sfm.get("equity", 0) + alpaca.get("equity", 0) + zerobot.get("equity", 0)
         if abs(curr_eq - last_eq) >= 25:
             direction = "up" if curr_eq > last_eq else "down"
             events.append({"ts": now_iso, "type": "pnl_milestone",
@@ -469,7 +469,7 @@ def _detect_events(kraken: dict, sfm: dict, alpaca: dict, zerobot: dict,
 
     # ── Escalation detection (urgent findings for Opus) ────────────────
     escalations = []
-    curr_eq = kraken.get("equity", 0) + sfm.get("equity", 0) + alpaca.get("equity", 0)
+    curr_eq = kraken.get("equity", 0) + sfm.get("equity", 0) + alpaca.get("equity", 0) + zerobot.get("equity", 0)
     if _pnl_history and len(_pnl_history) >= 2:
         prev_eq = _pnl_history[-2].get("universe_eq", curr_eq)
         if curr_eq - prev_eq < -50:

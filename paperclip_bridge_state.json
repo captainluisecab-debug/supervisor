@@ -1,0 +1,33 @@
+{
+  "tracked_issues": {
+    "classification_summary": {
+      "id": "8f54be09-6701-486d-81a0-881b4a8b2f0d",
+      "opened_at": "2026-04-04T03:25:39.738325+00:00"
+    },
+    "hermes_esc_equity_drop": {
+      "id": "380ee9eb-5d92-41ea-8925-e74ee0f23e21",
+      "opened_at": "2026-04-12T04:43:09.491841+00:00"
+    },
+    "hermes_esc_kraken_dd_critical": {
+      "id": "a9276541-643a-48b5-84e8-3a3c2dd7e6a7",
+      "opened_at": "2026-04-12T04:43:09.491841+00:00"
+    },
+    "_esc_archive_cursor": {
+      "ts": "2026-06-04T12:54:05.497381+00:00"
+    },
+    "hermes_esc_sfm_dd_critical": {
+      "id": "227c0c5f-ee1e-4acc-a8e4-c946517155f7",
+      "opened_at": "2026-04-17T03:33:13.734357+00:00"
+    },
+    "dd_critical_sfm": {
+      "id": "8559bbcf-4da4-484e-917b-77624bace0a0",
+      "opened_at": "2026-06-03T00:28:56.380153+00:00"
+    },
+    "regime_current": {
+      "id": "e77c8d0d-bcd2-458c-a172-38aff363f079",
+      "opened_at": "2026-06-03T04:21:38.178816+00:00",
+      "regime": "NEUTRAL"
+    }
+  },
+  "last_cycle": 1
+}

@@ -1,0 +1,37 @@
+╔════════════════════════════════════════════════════════╗
+║                GO-LIVE READINESS REPORT                ║
+║                  2026-06-04 12:05 UTC                  ║
+╠════════════════════════════════════════════════════════╣
+║ ALPACABOT (Stocks)                     Score:  65/100 ║
+║    Trades:     65/30            OK  25pts              ║
+║    Win rate:   55%              OK  20pts              ║
+║    Win/Loss:   N/A              XX   0pts              ║
+║    Max DD:     -0.00%           OK  20pts              ║
+║    Prof days:  N/A              XX   0pts              ║
+║ Verdict: NOT READY — Need trades to establish W/L ratio ║
+║              Need multiple days to assess profitability ║
+╠════════════════════════════════════════════════════════╣
+║ SFMBOT (Solana)                        Score:  40/100 ║
+║    Trades:     1/30             XX   0pts              ║
+║    Win rate:   100%             OK  20pts              ║
+║    Win/Loss:   N/A              XX   0pts              ║
+║    Max DD:     -0.00%           OK  20pts              ║
+║    Prof days:  N/A              XX   0pts              ║
+║ Verdict: NOT READY — Need 29 more trades               ║
+║              Need trades to establish W/L ratio        ║
+║              Need multiple days to assess profitability ║
+╠════════════════════════════════════════════════════════╣
+║ ENZOBOT (Kraken)                       Score:  25/100 ║
+║    Trades:     1302/30          OK  25pts              ║
+║    Win rate:   19%              XX   0pts              ║
+║    Win/Loss:   N/A              XX   0pts              ║
+║    Max DD:     -13.53%          XX   0pts              ║
+║    Prof days:  32% (60d)        XX   0pts              ║
+║ Verdict: NOT READY — Win rate 19% < 52% target         ║
+║              Need trades to establish W/L ratio        ║
+║              Drawdown 13.5% >= 10% limit               ║
+║              Prof days 32% < 75% target                ║
+╠════════════════════════════════════════════════════════╣
+║ OVERALL: NOT READY (avg 43/100)                        ║
+║ Estimated ready: Need ~2 weeks of active trading       ║
+╚════════════════════════════════════════════════════════╝

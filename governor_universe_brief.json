@@ -1,0 +1,56 @@
+{
+  "ts": "2026-06-04T12:54:05.727425+00:00",
+  "dominant_regime": "TRENDING_DOWN",
+  "effective_posture": {
+    "kraken": "SOFT_RETIRE",
+    "sfm": "HERMES_DD_OVERRIDE",
+    "alpaca": "TRADE_ACTIVE",
+    "zerobot": "ZEROBOT_TRADE_ACTIVE"
+  },
+  "kraken": {
+    "equity": 3408.611256512005,
+    "dd_pct": -3.799172490901892,
+    "mode": "DEFEND",
+    "open_positions": 0,
+    "cash": 3408.611256512005
+  },
+  "sfm": {
+    "equity": 1990.35,
+    "dd_pct": 0.0,
+    "open_position": false
+  },
+  "alpaca": {
+    "equity": 557.0617615567496,
+    "realized_pnl": 57.06176155674964,
+    "win_rate": 55.38461538461539,
+    "open_positions": 2
+  },
+  "brain_advisory": "Hermes advisory: NEUTRAL, K=-3.8% S=-20.9% A=0.0% Z=-0.0%",
+  "governor_decisions": [
+    {
+      "sleeve": "kraken",
+      "action": "SOFT_RETIRE",
+      "reason": "Operator soft-retire active (kraken_retire.flag present) \u2014 entries permanently blocked"
+    },
+    {
+      "sleeve": "sfm",
+      "action": "HERMES_DD_OVERRIDE",
+      "reason": "Hermes advisory: entry_allowed=false (DD=0.0%) \u2014 tighten-only override"
+    },
+    {
+      "sleeve": "alpaca",
+      "action": "TRADE_ACTIVE",
+      "reason": "Regime=TRENDING_UP -> TRADE."
+    },
+    {
+      "sleeve": "zerobot",
+      "action": "ZEROBOT_TRADE_ACTIVE",
+      "reason": "Regime=TRENDING_DOWN -> NORMAL (strategy's own gates apply)."
+    }
+  ],
+  "feedback": {
+    "equity_1h_ago": 0,
+    "equity_now": 5956.023018068755,
+    "equity_direction": "unknown"
+  }
+}

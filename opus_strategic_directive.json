@@ -1,0 +1,65 @@
+{
+  "universe_assessment": "The portfolio is down -0.84% overall with Kraken dragging (-3.87%) and SFM nearly wiped (-22.62%), while Alpaca is the sole bright spot at +7.21% with a 72.7% win rate over 22 trades. The market regime is NEUTRAL with zero confidence and BTC down -14.79% over 7 days, creating a hostile environment for crypto sleeves. The system is not on track for positive PnL without Alpaca continuing to outperform and crypto sleeves remaining flat.",
+  "biggest_risk": "Kraken's 0% win rate across 8 trades with -3.8% drawdown in DEFEND|BLOCK mode means any premature re-entry into crypto would accelerate losses given the -14.79% BTC 7-day trend and near-zero regime confidence.",
+  "biggest_opportunity": "Alpaca's MSFT (+$10.22 total, 75% win rate) and AMD (+$4.41, 75% win rate) demonstrate repeatable edge; SPY shows 100% win rate across 5 trades, making US equities the only validated alpha source right now.",
+  "kraken_directive": {
+    "posture": "HOLD",
+    "action": "Maintain DEFEND|BLOCK mode with zero new entries for the full 12-hour window. Do not lower entry score thresholds. Continue holding $0 crypto exposure. Reassess only if BTC recovers above its 7-day open and regime classification shifts to BULL with confidence > 0.5.",
+    "reasoning": "8 trades, 0% win rate, all exits via trail_hit, -3.87% PnL, -3.8% drawdown, and BTC -14.79% in 7 days. Three consecutive brain reviews have correctly held at confidence 0.25-0.35 \u2014 the data is unambiguous that conditions are adverse. Any re-entry risks compounding the existing drawdown with no statistical edge to support it."
+  },
+  "sfm_directive": {
+    "posture": "DEFENSIVE",
+    "action": "Place a hard capital floor: do not deploy more than $1.00 of the remaining $4.96 equity in any single trade. All three signal types (trend_ride RSI=34.1, oversold RSI=20.6, trend_ride RSI=43.8) produced losses with 0% win rate. Suspend trend_ride signals entirely given the -$0.63 avg PnL on 103-minute holds. Only allow oversold RSI signals below RSI=18 with gap > 0.5% to qualify, and cap position size at $1.00 maximum.",
+    "reasoning": "SFM is down -22.62% with $4.96 equity remaining \u2014 effectively a rounding error but still real money. All 3 signal types lost money. The longest hold (trend_ride, 103.9 min) produced the worst loss (-$0.63). With Solana likely correlated to BTC's -14.79% 7-day decline, the base environment is hostile. Preservation of remaining capital is the only rational objective."
+  },
+  "alpaca_directive": {
+    "posture": "MODERATE",
+    "action": "Hold existing 2 positions (AMZN and AMD based on recent buys). Prioritize new entries in MSFT, AMD, and SPY only \u2014 these are the three validated performers. Avoid NVDA (single trade, -$2.55, 0% win rate). Limit AMZN exposure to 1 position at a time given 66.7% win rate but negative total PnL (-$0.45). Target position sizes of $60-$105 consistent with current sizing. Do not scale up position sizes until drawdown returns to 0% after today's open. Enforce EOD flatten discipline already demonstrated. Seek bullish_continuation signals with score >= 0.65 (up from 0.62) on MSFT and AMD at open.",
+    "reasoning": "Alpaca has a 72.7% win rate, +$13.37 PnL, and zero drawdown \u2014 the only sleeve generating real edge. MSFT at $2.55 avg PnL per trade (75% win rate) and AMD at $1.10 avg PnL (75% win rate) are statistically robust over 4 trades each. SPY 100% win rate over 5 trades confirms broad market long bias works. NVDA is a hard avoid with -$2.55 on its only trade. Raising the signal score threshold slightly reduces false entries without sacrificing the documented edge."
+  },
+  "capital_priority": "Alpaca receives full deployment priority \u2014 it is the only sleeve with validated positive edge (72.7% win rate, +$13.37, zero drawdown). Kraken should receive zero new capital allocation while in DEFEND|BLOCK. SFM should be treated as a legacy position with hard $1.00 per-trade cap. If the system supports intra-sleeve capital transfer, consider routing any Kraken idle cash into a reserve buffer rather than forcing crypto trades.",
+  "param_recommendations": [
+    {
+      "sleeve": "alpaca",
+      "param": "min_signal_score for new entries",
+      "current": "0.62",
+      "recommended": "0.65",
+      "evidence": "AMZN at score 0.62 produced -$1.75 stop-loss and -$0.45 total PnL across 3 trades. AMD and MSFT both hit take-profit at 10%+ suggesting the strategy works but entry quality matters \u2014 a marginal score increase filters weaker setups without blocking the high-conviction trades that produced the bulk of gains."
+    },
+    {
+      "sleeve": "alpaca",
+      "param": "NVDA trading status",
+      "current": "ENABLED",
+      "recommended": "BLOCKED for 12h",
+      "evidence": "NVDA: 1 trade, 0% win rate, -$2.55 PnL \u2014 worst single-trade loss in the sleeve. No statistical basis to continue trading it in current regime."
+    },
+    {
+      "sleeve": "sfm",
+      "param": "trend_ride signal minimum RSI threshold",
+      "current": "no lower bound (triggered at RSI=34.1 and RSI=43.8)",
+      "recommended": "disable trend_ride signals entirely for 12h; only allow oversold signals with RSI < 18",
+      "evidence": "Both trend_ride entries lost money (-$0.63 at 103.9 min hold, -$0.18 at 10 min hold). 0% win rate across all 3 signal types. Environment is trending down with BTC -14.79%."
+    },
+    {
+      "sleeve": "kraken",
+      "param": "recommended_min_score",
+      "current": "0 (per outcome_summary)",
+      "recommended": "maintain DEFEND|BLOCK \u2014 do not lower score threshold to induce entries",
+      "evidence": "8 trades, 0% win rate, -$26.36 PnL. Score threshold reduction would increase trade volume into a regime with no demonstrated edge. Three consecutive brain reviews at confidence 0.25-0.35 confirm hold is correct."
+    }
+  ],
+  "risk_warnings": [
+    "Kraken re-entry risk: If DEFEND|BLOCK mode is lifted prematurely or score thresholds are lowered without regime improvement, the 0% win rate pattern is likely to continue given BTC's -14.79% 7-day trend \u2014 this could push portfolio drawdown past -2% total.",
+    "SFM capital destruction: At $4.96 equity and -22.62% drawdown, any sequence of 2-3 losing trades at current sizing will effectively zero out the sleeve; hard position size cap of $1.00 is critical to prevent total loss.",
+    "Alpaca Monday open gap risk: Positions in AMZN and AMD entered on Friday (May 29) at prices 272.03 and 512.86 face weekend gap risk \u2014 AMD previously stopped out at -2.6% in this data, and AMZN stopped at -2.7%; confirm stop-losses are active before Monday open.",
+    "Regime confidence at 0.0: NEUTRAL regime with zero confidence means the system has no directional conviction \u2014 any signal from trend-following models is operating in a statistical vacuum, increasing false positive rates across all sleeves.",
+    "Correlated drawdown risk: Kraken (-3.87%) and SFM (-22.62%) are both crypto-correlated. If BTC continues declining, both sleeves remain impaired simultaneously, leaving Alpaca ($1072 of $7894 equity, ~13.6% of portfolio) as the only working engine \u2014 insufficient to offset crypto losses at current scales."
+  ],
+  "_meta": {
+    "ts": "2026-06-04T12:06:45.272477+00:00",
+    "model": "claude-sonnet-4-20250514",
+    "input_tokens": 3706,
+    "output_tokens": 2112,
+    "portfolio_equity": 7893.63
+  }
+}

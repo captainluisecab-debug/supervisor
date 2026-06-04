@@ -1,0 +1,911 @@
+{
+  "ts": "2026-06-04T12:54:05.394672+00:00",
+  "cycle_source": "hermes_context",
+  "universe": {
+    "equity": 7894.28,
+    "pnl_vs_baseline": -2483.34,
+    "pnl_pct": -23.93,
+    "delta_1h": 0.65,
+    "delta_12h": -1.74
+  },
+  "kraken": {
+    "sleeve": "kraken",
+    "equity": 3408.611256512005,
+    "dd_pct": -3.799172490901892,
+    "cash": 3408.611256512005,
+    "open_positions": 0,
+    "brain_mode": "DEFEND",
+    "effective_posture": "SOFT_RETIRE",
+    "force_flatten": false,
+    "regime": "TRENDING_DOWN",
+    "pair_regime": {
+      "BTC/USD": "DOWN",
+      "ETH/USD": "DOWN",
+      "XRP/USD": "DOWN",
+      "POL/USD": "DOWN",
+      "NEAR/USD": "DOWN"
+    }
+  },
+  "sfm": {
+    "sleeve": "sfm",
+    "equity": 5.07,
+    "dd_pct": -20.904836193447736,
+    "open_position": false,
+    "realized_pnl": 142.8683073430001,
+    "total_trades": 8,
+    "winning_trades": 2
+  },
+  "alpaca": {
+    "sleeve": "alpaca",
+    "equity": 1072.6,
+    "dd_pct": 0.0,
+    "realized_pnl": 57.06176155674964,
+    "total_trades": 65,
+    "winning_trades": 36,
+    "losing_trades": 29,
+    "open_positions": 2
+  },
+  "zerobot": {
+    "sleeve": "zerobot",
+    "equity": 3408.0,
+    "dd_pct": -0.0,
+    "open_position": false,
+    "consecutive_losses": 0,
+    "dd_brake_active": false,
+    "stale": false,
+    "stale_reason": null,
+    "age_sec": 114.39465594291687
+  },
+  "regime": {
+    "label": "NEUTRAL",
+    "confidence": 0.0
+  },
+  "advisory": {
+    "kraken": {
+      "mode": "SCOUT",
+      "size_mult": 0.5,
+      "entry_allowed": true,
+      "reasoning": "Hermes advisory: NEUTRAL, kraken DD -3.8%"
+    },
+    "sfm": {
+      "mode": "DEFENSE",
+      "size_mult": 0.0,
+      "entry_allowed": false,
+      "reasoning": "Hermes advisory: NEUTRAL, sfm DD -20.9%"
+    },
+    "alpaca": {
+      "mode": "SCOUT",
+      "size_mult": 0.5,
+      "entry_allowed": true,
+      "reasoning": "Hermes advisory: NEUTRAL, alpaca DD 0.0%"
+    },
+    "zerobot": {
+      "mode": "SCOUT",
+      "size_mult": 0.5,
+      "entry_allowed": true,
+      "reasoning": "Hermes advisory: NEUTRAL, zerobot DD -0.0%"
+    },
+    "note": "Hermes advisory: NEUTRAL, K=-3.8% S=-20.9% A=0.0% Z=-0.0%"
+  },
+  "recent_events": [
+    {
+      "ts": "2026-06-04T11:15:17.914560+00:00",
+      "type": "pnl_milestone",
+      "detail": "Universe $down $3408 (7894 -> 4486)"
+    },
+    {
+      "ts": "2026-06-04T11:20:21.393145+00:00",
+      "type": "pnl_milestone",
+      "detail": "Universe $down $3408 (7894 -> 4486)"
+    },
+    {
+      "ts": "2026-06-04T11:25:25.158074+00:00",
+      "type": "pnl_milestone",
+      "detail": "Universe $down $3408 (7894 -> 4486)"
+    },
+    {
+      "ts": "2026-06-04T11:30:28.664248+00:00",
+      "type": "pnl_milestone",
+      "detail": "Universe $down $3408 (7894 -> 4486)"
+    },
+    {
+      "ts": "2026-06-04T11:35:32.171930+00:00",
+      "type": "pnl_milestone",
+      "detail": "Universe $down $3408 (7893 -> 4485)"
+    },
+    {
+      "ts": "2026-06-04T11:40:35.805947+00:00",
+      "type": "pnl_milestone",
+      "detail": "Universe $down $3408 (7893 -> 4485)"
+    },
+    {
+      "ts": "2026-06-04T11:45:39.254046+00:00",
+      "type": "pnl_milestone",
+      "detail": "Universe $down $3408 (7893 -> 4485)"
+    },
+    {
+      "ts": "2026-06-04T11:50:42.759524+00:00",
+      "type": "pnl_milestone",
+      "detail": "Universe $down $3408 (7893 -> 4485)"
+    },
+    {
+      "ts": "2026-06-04T11:55:46.279842+00:00",
+      "type": "pnl_milestone",
+      "detail": "Universe $down $3408 (7894 -> 4486)"
+    },
+    {
+      "ts": "2026-06-04T12:00:49.908841+00:00",
+      "type": "pnl_milestone",
+      "detail": "Universe $down $3408 (7894 -> 4486)"
+    },
+    {
+      "ts": "2026-06-04T12:06:45.758718+00:00",
+      "type": "pnl_milestone",
+      "detail": "Universe $down $3408 (7894 -> 4486)"
+    },
+    {
+      "ts": "2026-06-04T12:11:49.478840+00:00",
+      "type": "pnl_milestone",
+      "detail": "Universe $down $3408 (7894 -> 4486)"
+    },
+    {
+      "ts": "2026-06-04T12:16:53.124524+00:00",
+      "type": "pnl_milestone",
+      "detail": "Universe $down $3408 (7894 -> 4486)"
+    },
+    {
+      "ts": "2026-06-04T12:21:56.576499+00:00",
+      "type": "pnl_milestone",
+      "detail": "Universe $down $3408 (7894 -> 4486)"
+    },
+    {
+      "ts": "2026-06-04T12:27:00.387585+00:00",
+      "type": "pnl_milestone",
+      "detail": "Universe $down $3408 (7894 -> 4486)"
+    },
+    {
+      "ts": "2026-06-04T12:32:03.854716+00:00",
+      "type": "pnl_milestone",
+      "detail": "Universe $down $3408 (7894 -> 4486)"
+    },
+    {
+      "ts": "2026-06-04T12:37:07.159886+00:00",
+      "type": "pnl_milestone",
+      "detail": "Universe $down $3408 (7894 -> 4486)"
+    },
+    {
+      "ts": "2026-06-04T12:42:10.604110+00:00",
+      "type": "pnl_milestone",
+      "detail": "Universe $down $3408 (7894 -> 4486)"
+    },
+    {
+      "ts": "2026-06-04T12:47:14.284418+00:00",
+      "type": "pnl_milestone",
+      "detail": "Universe $down $3408 (7894 -> 4486)"
+    },
+    {
+      "ts": "2026-06-04T12:52:18.021158+00:00",
+      "type": "pnl_milestone",
+      "detail": "Universe $down $3408 (7894 -> 4486)"
+    }
+  ],
+  "governor_decisions": [
+    {
+      "action": "TRADE_ACTIVE",
+      "sleeve": "alpaca",
+      "reason": "Regime=TRENDING_UP -> TRADE."
+    },
+    {
+      "action": "ZEROBOT_TRADE_ACTIVE",
+      "sleeve": "zerobot",
+      "reason": "Regime=TRENDING_DOWN -> NORMAL (strategy's own gates apply)."
+    },
+    {
+      "action": "SOFT_RETIRE",
+      "sleeve": "kraken",
+      "reason": "Operator soft-retire active (kraken_retire.flag present) \u2014 entries permanently b"
+    },
+    {
+      "action": "HERMES_DD_OVERRIDE",
+      "sleeve": "sfm",
+      "reason": "Hermes advisory: entry_allowed=false (DD=0.0%) \u2014 tighten-only override"
+    },
+    {
+      "action": "TRADE_ACTIVE",
+      "sleeve": "alpaca",
+      "reason": "Regime=TRENDING_UP -> TRADE."
+    },
+    {
+      "action": "ZEROBOT_TRADE_ACTIVE",
+      "sleeve": "zerobot",
+      "reason": "Regime=TRENDING_DOWN -> NORMAL (strategy's own gates apply)."
+    },
+    {
+      "action": "SOFT_RETIRE",
+      "sleeve": "kraken",
+      "reason": "Operator soft-retire active (kraken_retire.flag present) \u2014 entries permanently b"
+    },
+    {
+      "action": "HERMES_DD_OVERRIDE",
+      "sleeve": "sfm",
+      "reason": "Hermes advisory: entry_allowed=false (DD=0.0%) \u2014 tighten-only override"
+    },
+    {
+      "action": "TRADE_ACTIVE",
+      "sleeve": "alpaca",
+      "reason": "Regime=TRENDING_UP -> TRADE."
+    },
+    {
+      "action": "ZEROBOT_TRADE_ACTIVE",
+      "sleeve": "zerobot",
+      "reason": "Regime=TRENDING_DOWN -> NORMAL (strategy's own gates apply)."
+    }
+  ],
+  "posture_outcomes": [
+    {
+      "ts": "2026-06-04T08:13:14.489471+00:00",
+      "posture": "SOFT_RETIRE",
+      "duration_min": 60.7,
+      "equity_start": 5956.02,
+      "equity_end": 5956.02,
+      "equity_delta": 0.0,
+      "verdict": "NEUTRAL"
+    },
+    {
+      "ts": "2026-06-04T09:13:55.226185+00:00",
+      "posture": "SOFT_RETIRE",
+      "duration_min": 60.7,
+      "equity_start": 5956.02,
+      "equity_end": 5956.02,
+      "equity_delta": 0.0,
+      "verdict": "NEUTRAL"
+    },
+    {
+      "ts": "2026-06-04T10:14:36.152947+00:00",
+      "posture": "SOFT_RETIRE",
+      "duration_min": 60.7,
+      "equity_start": 5956.02,
+      "equity_end": 5956.02,
+      "equity_delta": 0.0,
+      "verdict": "NEUTRAL"
+    },
+    {
+      "ts": "2026-06-04T11:15:18.139268+00:00",
+      "posture": "SOFT_RETIRE",
+      "duration_min": 60.7,
+      "equity_start": 5956.02,
+      "equity_end": 5956.02,
+      "equity_delta": 0.0,
+      "verdict": "NEUTRAL"
+    },
+    {
+      "ts": "2026-06-04T12:16:53.349694+00:00",
+      "posture": "SOFT_RETIRE",
+      "duration_min": 61.6,
+      "equity_start": 5956.02,
+      "equity_end": 5956.02,
+      "equity_delta": 0.0,
+      "verdict": "NEUTRAL"
+    }
+  ],
+  "observation": {
+    "kraken_recent_exits": [
+      {
+        "reason": "psar_trail",
+        "pnl": -0.2985,
+        "pair": "POL/USD"
+      },
+      {
+        "reason": "take_profit",
+        "pnl": 2.1177,
+        "pair": "XRP/USD"
+      },
+      {
+        "reason": "trail_hit",
+        "pnl": -4.1508,
+        "pair": "XRP/USD"
+      },
+      {
+        "reason": "psar_trail",
+        "pnl": -0.876,
+        "pair": "XRP/USD"
+      },
+      {
+        "reason": "trail_hit",
+        "pnl": -4.1147,
+        "pair": "XRP/USD"
+      },
+      {
+        "reason": "trail_hit",
+        "pnl": -3.3773,
+        "pair": "XRP/USD"
+      },
+      {
+        "reason": "trail_hit",
+        "pnl": -6.1456,
+        "pair": "NEAR/USD"
+      },
+      {
+        "reason": "cash_and_run_chop_w4_dN_$0.09_buf0.1x",
+        "pnl": -0.2927,
+        "pair": "XRP/USD"
+      },
+      {
+        "reason": "trail_hit",
+        "pnl": -3.493,
+        "pair": "ETH/USD"
+      },
+      {
+        "reason": "score_exit",
+        "pnl": -3.9145,
+        "pair": "XRP/USD"
+      }
+    ],
+    "kraken_recent_blocks": [
+      {
+        "pair": "NEAR/USD",
+        "reason": "blocked:score=65.3<88.0(regime=VOLATILE)",
+        "score": 65.32
+      },
+      {
+        "pair": "NEAR/USD",
+        "reason": "blocked:score=65.3<88.0(regime=VOLATILE)",
+        "score": 65.32
+      },
+      {
+        "pair": "NEAR/USD",
+        "reason": "blocked:score=65.3<88.0(regime=VOLATILE)",
+        "score": 65.32
+      },
+      {
+        "pair": "NEAR/USD",
+        "reason": "blocked:score=65.3<88.0(regime=VOLATILE)",
+        "score": 65.32
+      },
+      {
+        "pair": "NEAR/USD",
+        "reason": "blocked:score=65.3<88.0(regime=VOLATILE)",
+        "score": 65.32
+      },
+      {
+        "pair": "NEAR/USD",
+        "reason": "blocked:score=65.3<88.0(regime=VOLATILE)",
+        "score": 65.32
+      },
+      {
+        "pair": "NEAR/USD",
+        "reason": "blocked:score=65.3<88.0(regime=VOLATILE)",
+        "score": 65.32
+      },
+      {
+        "pair": "NEAR/USD",
+        "reason": "blocked:score=65.3<88.0(regime=VOLATILE)",
+        "score": 65.32
+      },
+      {
+        "pair": "NEAR/USD",
+        "reason": "blocked:score=65.3<88.0(regime=VOLATILE)",
+        "score": 65.32
+      },
+      {
+        "pair": "NEAR/USD",
+        "reason": "blocked:score=65.3<88.0(regime=VOLATILE)",
+        "score": 65.32
+      }
+    ],
+    "sfm_win_rate": "2/8",
+    "alpaca_win_rate": "36/65"
+  },
+  "hermes_insights": [
+    "CONCERN: last 10 exits have 9 losses vs 1 wins (avg $-2.45)",
+    "Top exit reason: trail_hit (5/10)",
+    "Kraken: 7/26 wins (27%)",
+    "Top entry blocker: blocked:score=65.3<88.0(regime=VOLATILE) (11/20)",
+    "SFM: 2/8 wins (25%)",
+    "Alpaca: 36/65 wins (55%)"
+  ],
+  "execution_truth": {
+    "recent_executions": [
+      {
+        "ts": "2026-05-28T13:41:39.642359+00:00",
+        "bot": "alpaca",
+        "symbol": "AMD",
+        "side": "SELL",
+        "size_usd": 61.173504000000015,
+        "price": 499.85,
+        "pnl_usd": 0.665588309745788,
+        "reason": "trail_stop_mid (peak +2.3%, floor +1.2%, now 1.1%)"
+      },
+      {
+        "ts": "2026-05-28T13:43:51.168220+00:00",
+        "bot": "alpaca",
+        "symbol": "AMZN",
+        "side": "SELL",
+        "size_usd": 64.54224,
+        "price": 268.96,
+        "pnl_usd": 0.8115769957081485,
+        "reason": "trail_stop_mid (peak +2.5%, floor +1.3%, now 1.3%)"
+      },
+      {
+        "ts": "2026-05-28T13:46:00.010401+00:00",
+        "bot": "alpaca",
+        "symbol": "MSFT",
+        "side": "BUY",
+        "size_usd": 101.98368,
+        "price": 419.42,
+        "pnl_usd": 0.0,
+        "reason": "trader_primary_buy: breakout_long@0.55"
+      },
+      {
+        "ts": "2026-05-28T13:47:04.076018+00:00",
+        "bot": "alpaca",
+        "symbol": "AMD",
+        "side": "BUY",
+        "size_usd": 61.19078400000001,
+        "price": 497.225,
+        "pnl_usd": 0.0,
+        "reason": "trader_primary_buy: bullish_continuation@0.62"
+      },
+      {
+        "ts": "2026-05-28T19:51:02.103782+00:00",
+        "bot": "alpaca",
+        "symbol": "SPY",
+        "side": "SELL",
+        "size_usd": 101.92032000000002,
+        "price": 754.76,
+        "pnl_usd": 0.5334721010082109,
+        "reason": "eod_posture_flatten"
+      },
+      {
+        "ts": "2026-05-28T19:51:03.402762+00:00",
+        "bot": "alpaca",
+        "symbol": "TSLA",
+        "side": "BUY",
+        "size_usd": 64.95568,
+        "price": 443.32,
+        "pnl_usd": 0.0,
+        "reason": "trader_primary_buy: bullish_continuation@0.62"
+      },
+      {
+        "ts": "2026-05-29T14:24:39.897004+00:00",
+        "bot": "alpaca",
+        "symbol": "AMD",
+        "side": "SELL",
+        "size_usd": 61.19078400000001,
+        "price": 513.975,
+        "pnl_usd": 2.0613316546834937,
+        "reason": "trail_stop_hi (peak +5.9%, floor +3.5%, now 3.4%)"
+      },
+      {
+        "ts": "2026-05-29T14:26:52.463965+00:00",
+        "bot": "alpaca",
+        "symbol": "TSLA",
+        "side": "SELL",
+        "size_usd": 64.95568,
+        "price": 429.76,
+        "pnl_usd": -1.9868244626906078,
+        "reason": "stop_loss -3.1%"
+      },
+      {
+        "ts": "2026-05-29T14:30:08.698218+00:00",
+        "bot": "alpaca",
+        "symbol": "SPY",
+        "side": "BUY",
+        "size_usd": 102.67968,
+        "price": 756.71,
+        "pnl_usd": 0.0,
+        "reason": "trader_primary_buy: bullish_continuation@0.62"
+      },
+      {
+        "ts": "2026-05-29T17:30:09.413505+00:00",
+        "bot": "alpaca",
+        "symbol": "TSLA",
+        "side": "BUY",
+        "size_usd": 65.076064,
+        "price": 438.3,
+        "pnl_usd": 0.0,
+        "reason": "trader_primary_buy: bullish_continuation@0.62"
+      },
+      {
+        "ts": "2026-05-29T19:50:37.129491+00:00",
+        "bot": "alpaca",
+        "symbol": "SPY",
+        "side": "SELL",
+        "size_usd": 102.67968,
+        "price": 757.145,
+        "pnl_usd": 0.05902612731428738,
+        "reason": "eod_posture_flatten"
+      },
+      {
+        "ts": "2026-05-29T19:50:37.488712+00:00",
+        "bot": "alpaca",
+        "symbol": "TSLA",
+        "side": "SELL",
+        "size_usd": 65.076064,
+        "price": 436.9,
+        "pnl_usd": -0.20786331188684057,
+        "reason": "eod_posture_flatten"
+      },
+      {
+        "ts": "2026-05-29T19:50:38.733166+00:00",
+        "bot": "alpaca",
+        "symbol": "AMZN",
+        "side": "BUY",
+        "size_usd": 65.118016,
+        "price": 272.03,
+        "pnl_usd": 0.0,
+        "reason": "trader_primary_buy: bullish_continuation@0.62"
+      },
+      {
+        "ts": "2026-05-29T19:51:42.737735+00:00",
+        "bot": "alpaca",
+        "symbol": "AMD",
+        "side": "BUY",
+        "size_usd": 61.683264000000015,
+        "price": 512.86,
+        "pnl_usd": 0.0,
+        "reason": "trader_primary_buy: bullish_continuation@0.62"
+      },
+      {
+        "ts": "2026-06-01T13:30:15.984790+00:00",
+        "bot": "alpaca",
+        "symbol": "MSFT",
+        "side": "SELL",
+        "size_usd": 101.98368,
+        "price": 463.835,
+        "pnl_usd": 10.79968801487768,
+        "reason": "take_profit 10.6%"
+      },
+      {
+        "ts": "2026-06-01T13:30:16.336682+00:00",
+        "bot": "alpaca",
+        "symbol": "AMZN",
+        "side": "SELL",
+        "size_usd": 65.118016,
+        "price": 264.72,
+        "pnl_usd": -1.749853681432182,
+        "reason": "stop_loss -2.7%"
+      },
+      {
+        "ts": "2026-06-01T13:30:16.689945+00:00",
+        "bot": "alpaca",
+        "symbol": "AMD",
+        "side": "SELL",
+        "size_usd": 61.683264000000015,
+        "price": 499.54,
+        "pnl_usd": -1.6020377422298477,
+        "reason": "stop_loss -2.6%"
+      },
+      {
+        "ts": "2026-06-01T17:30:13.067015+00:00",
+        "bot": "alpaca",
+        "symbol": "SPY",
+        "side": "BUY",
+        "size_usd": 102.94368000000001,
+        "price": 758.34,
+        "pnl_usd": 0.0,
+        "reason": "trader_primary_buy: bullish_continuation@0.62"
+      },
+      {
+        "ts": "2026-06-01T17:30:13.584540+00:00",
+        "bot": "alpaca",
+        "symbol": "AMD",
+        "side": "BUY",
+        "size_usd": 61.76620800000002,
+        "price": 512.12,
+        "pnl_usd": 0.0,
+        "reason": "trader_primary_buy: bullish_continuation@0.62"
+      },
+      {
+        "ts": "2026-06-01T19:51:03.113790+00:00",
+        "bot": "alpaca",
+        "symbol": "SPY",
+        "side": "SELL",
+        "size_usd": 102.94368000000001,
+        "price": 758.475,
+        "pnl_usd": 0.018326076430096087,
+        "reason": "eod_posture_flatten"
+      }
+    ],
+    "recent_buys": [
+      {
+        "ts": "2026-05-27T17:30:26.919711+00:00",
+        "bot": "alpaca",
+        "symbol": "AMD",
+        "side": "BUY",
+        "size_usd": 61.173504000000015,
+        "price": 494.47,
+        "pnl_usd": 0.0,
+        "reason": "trader_primary_buy: bullish_continuation@0.62"
+      },
+      {
+        "ts": "2026-05-28T13:46:00.010401+00:00",
+        "bot": "alpaca",
+        "symbol": "MSFT",
+        "side": "BUY",
+        "size_usd": 101.98368,
+        "price": 419.42,
+        "pnl_usd": 0.0,
+        "reason": "trader_primary_buy: breakout_long@0.55"
+      },
+      {
+        "ts": "2026-05-28T13:47:04.076018+00:00",
+        "bot": "alpaca",
+        "symbol": "AMD",
+        "side": "BUY",
+        "size_usd": 61.19078400000001,
+        "price": 497.225,
+        "pnl_usd": 0.0,
+        "reason": "trader_primary_buy: bullish_continuation@0.62"
+      },
+      {
+        "ts": "2026-05-28T19:51:03.402762+00:00",
+        "bot": "alpaca",
+        "symbol": "TSLA",
+        "side": "BUY",
+        "size_usd": 64.95568,
+        "price": 443.32,
+        "pnl_usd": 0.0,
+        "reason": "trader_primary_buy: bullish_continuation@0.62"
+      },
+      {
+        "ts": "2026-05-29T14:30:08.698218+00:00",
+        "bot": "alpaca",
+        "symbol": "SPY",
+        "side": "BUY",
+        "size_usd": 102.67968,
+        "price": 756.71,
+        "pnl_usd": 0.0,
+        "reason": "trader_primary_buy: bullish_continuation@0.62"
+      },
+      {
+        "ts": "2026-05-29T17:30:09.413505+00:00",
+        "bot": "alpaca",
+        "symbol": "TSLA",
+        "side": "BUY",
+        "size_usd": 65.076064,
+        "price": 438.3,
+        "pnl_usd": 0.0,
+        "reason": "trader_primary_buy: bullish_continuation@0.62"
+      },
+      {
+        "ts": "2026-05-29T19:50:38.733166+00:00",
+        "bot": "alpaca",
+        "symbol": "AMZN",
+        "side": "BUY",
+        "size_usd": 65.118016,
+        "price": 272.03,
+        "pnl_usd": 0.0,
+        "reason": "trader_primary_buy: bullish_continuation@0.62"
+      },
+      {
+        "ts": "2026-05-29T19:51:42.737735+00:00",
+        "bot": "alpaca",
+        "symbol": "AMD",
+        "side": "BUY",
+        "size_usd": 61.683264000000015,
+        "price": 512.86,
+        "pnl_usd": 0.0,
+        "reason": "trader_primary_buy: bullish_continuation@0.62"
+      },
+      {
+        "ts": "2026-06-01T17:30:13.067015+00:00",
+        "bot": "alpaca",
+        "symbol": "SPY",
+        "side": "BUY",
+        "size_usd": 102.94368000000001,
+        "price": 758.34,
+        "pnl_usd": 0.0,
+        "reason": "trader_primary_buy: bullish_continuation@0.62"
+      },
+      {
+        "ts": "2026-06-01T17:30:13.584540+00:00",
+        "bot": "alpaca",
+        "symbol": "AMD",
+        "side": "BUY",
+        "size_usd": 61.76620800000002,
+        "price": 512.12,
+        "pnl_usd": 0.0,
+        "reason": "trader_primary_buy: bullish_continuation@0.62"
+      }
+    ],
+    "recent_sells": [
+      {
+        "ts": "2026-05-28T13:43:51.168220+00:00",
+        "bot": "alpaca",
+        "symbol": "AMZN",
+        "side": "SELL",
+        "size_usd": 64.54224,
+        "price": 268.96,
+        "pnl_usd": 0.8115769957081485,
+        "reason": "trail_stop_mid (peak +2.5%, floor +1.3%, now 1.3%)"
+      },
+      {
+        "ts": "2026-05-28T19:51:02.103782+00:00",
+        "bot": "alpaca",
+        "symbol": "SPY",
+        "side": "SELL",
+        "size_usd": 101.92032000000002,
+        "price": 754.76,
+        "pnl_usd": 0.5334721010082109,
+        "reason": "eod_posture_flatten"
+      },
+      {
+        "ts": "2026-05-29T14:24:39.897004+00:00",
+        "bot": "alpaca",
+        "symbol": "AMD",
+        "side": "SELL",
+        "size_usd": 61.19078400000001,
+        "price": 513.975,
+        "pnl_usd": 2.0613316546834937,
+        "reason": "trail_stop_hi (peak +5.9%, floor +3.5%, now 3.4%)"
+      },
+      {
+        "ts": "2026-05-29T14:26:52.463965+00:00",
+        "bot": "alpaca",
+        "symbol": "TSLA",
+        "side": "SELL",
+        "size_usd": 64.95568,
+        "price": 429.76,
+        "pnl_usd": -1.9868244626906078,
+        "reason": "stop_loss -3.1%"
+      },
+      {
+        "ts": "2026-05-29T19:50:37.129491+00:00",
+        "bot": "alpaca",
+        "symbol": "SPY",
+        "side": "SELL",
+        "size_usd": 102.67968,
+        "price": 757.145,
+        "pnl_usd": 0.05902612731428738,
+        "reason": "eod_posture_flatten"
+      },
+      {
+        "ts": "2026-05-29T19:50:37.488712+00:00",
+        "bot": "alpaca",
+        "symbol": "TSLA",
+        "side": "SELL",
+        "size_usd": 65.076064,
+        "price": 436.9,
+        "pnl_usd": -0.20786331188684057,
+        "reason": "eod_posture_flatten"
+      },
+      {
+        "ts": "2026-06-01T13:30:15.984790+00:00",
+        "bot": "alpaca",
+        "symbol": "MSFT",
+        "side": "SELL",
+        "size_usd": 101.98368,
+        "price": 463.835,
+        "pnl_usd": 10.79968801487768,
+        "reason": "take_profit 10.6%"
+      },
+      {
+        "ts": "2026-06-01T13:30:16.336682+00:00",
+        "bot": "alpaca",
+        "symbol": "AMZN",
+        "side": "SELL",
+        "size_usd": 65.118016,
+        "price": 264.72,
+        "pnl_usd": -1.749853681432182,
+        "reason": "stop_loss -2.7%"
+      },
+      {
+        "ts": "2026-06-01T13:30:16.689945+00:00",
+        "bot": "alpaca",
+        "symbol": "AMD",
+        "side": "SELL",
+        "size_usd": 61.683264000000015,
+        "price": 499.54,
+        "pnl_usd": -1.6020377422298477,
+        "reason": "stop_loss -2.6%"
+      },
+      {
+        "ts": "2026-06-01T19:51:03.113790+00:00",
+        "bot": "alpaca",
+        "symbol": "SPY",
+        "side": "SELL",
+        "size_usd": 102.94368000000001,
+        "price": 758.475,
+        "pnl_usd": 0.018326076430096087,
+        "reason": "eod_posture_flatten"
+      }
+    ],
+    "force_flattens": [
+      {
+        "ts": "2026-05-26T19:50:05.269495+00:00",
+        "bot": "alpaca",
+        "symbol": "TSLA",
+        "side": "SELL",
+        "size_usd": 64.40848,
+        "price": 432.88,
+        "pnl_usd": 0.5734405295296684,
+        "reason": "eod_posture_flatten"
+      },
+      {
+        "ts": "2026-05-28T19:51:02.103782+00:00",
+        "bot": "alpaca",
+        "symbol": "SPY",
+        "side": "SELL",
+        "size_usd": 101.92032000000002,
+        "price": 754.76,
+        "pnl_usd": 0.5334721010082109,
+        "reason": "eod_posture_flatten"
+      },
+      {
+        "ts": "2026-05-29T19:50:37.129491+00:00",
+        "bot": "alpaca",
+        "symbol": "SPY",
+        "side": "SELL",
+        "size_usd": 102.67968,
+        "price": 757.145,
+        "pnl_usd": 0.05902612731428738,
+        "reason": "eod_posture_flatten"
+      },
+      {
+        "ts": "2026-05-29T19:50:37.488712+00:00",
+        "bot": "alpaca",
+        "symbol": "TSLA",
+        "side": "SELL",
+        "size_usd": 65.076064,
+        "price": 436.9,
+        "pnl_usd": -0.20786331188684057,
+        "reason": "eod_posture_flatten"
+      },
+      {
+        "ts": "2026-06-01T19:51:03.113790+00:00",
+        "bot": "alpaca",
+        "symbol": "SPY",
+        "side": "SELL",
+        "size_usd": 102.94368000000001,
+        "price": 758.475,
+        "pnl_usd": 0.018326076430096087,
+        "reason": "eod_posture_flatten"
+      }
+    ],
+    "authority_violations": [],
+    "reconciliation_summary": {
+      "total_executions": 50,
+      "buys": 25,
+      "sells": 25,
+      "force_flattens": 11,
+      "violations_count": 0,
+      "last_execution_ts": "2026-06-01T19:51:03.113790+00:00",
+      "last_buy_ts": "2026-06-01T17:30:13.584540+00:00",
+      "last_sell_ts": "2026-06-01T19:51:03.113790+00:00",
+      "churn_windows": {
+        "1h": {
+          "buys": 0,
+          "force_flattens": 0,
+          "unauthorized_entries": 0,
+          "churn_pnl_drain": 0,
+          "repeated_entry_loops": 0
+        },
+        "6h": {
+          "buys": 0,
+          "force_flattens": 0,
+          "unauthorized_entries": 0,
+          "churn_pnl_drain": 0,
+          "repeated_entry_loops": 0
+        },
+        "24h": {
+          "buys": 0,
+          "force_flattens": 0,
+          "unauthorized_entries": 0,
+          "churn_pnl_drain": 0,
+          "repeated_entry_loops": 0
+        }
+      }
+    }
+  },
+  "opus_memory": {
+    "cycle_count": 134,
+    "issues_active": [],
+    "issues_fixed": [
+      "LESSON-007: dedup in _read_recent_exits()",
+      "LESSON-008: expectancy time-decay",
+      "orphaned brain_pending.json removed"
+    ],
+    "last_regime": "TRENDING_DOWN"
+  }
+}

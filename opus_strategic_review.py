@@ -24,6 +24,11 @@ BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 DIRECTIVE_FILE = os.path.join(BASE_DIR, "opus_strategic_directive.json")
 REVIEW_LOG = os.path.join(BASE_DIR, "opus_strategic_log.jsonl")
 
+# Single source of truth for the strategic-review model string — used for BOTH
+# the API call AND the _meta stamp so they cannot drift (mirrors adaptive_brain.py).
+# Prior bug: call used claude-sonnet-4-6 while stamp recorded claude-sonnet-4-20250514.
+MODEL = "claude-sonnet-4-6"
+
 ENZOBOT_DIR = r"C:\Projects\enzobot"
 SFMBOT_DIR  = r"C:\Projects\sfmbot"
 ALPACABOT_DIR = r"C:\Projects\alpacabot"
@@ -236,7 +241,7 @@ Respond ONLY with valid JSON in this format:
         import anthropic
         client = anthropic.Anthropic(api_key=api_key)
         resp = client.messages.create(
-            model="claude-sonnet-4-6",
+            model=MODEL,
             max_tokens=4096,
             messages=[{"role": "user", "content": prompt}],
         )
@@ -249,7 +254,7 @@ Respond ONLY with valid JSON in this format:
 
         directive["_meta"] = {
             "ts": datetime.now(timezone.utc).isoformat(),
-            "model": "claude-sonnet-4-20250514",
+            "model": MODEL,
             "input_tokens": resp.usage.input_tokens,
             "output_tokens": resp.usage.output_tokens,
             "portfolio_equity": context["portfolio"]["total_equity"],

@@ -1,0 +1,20 @@
+{
+  "bot": "enzobot",
+  "ts": "2026-06-04T12:45:33.318333+00:00",
+  "problem_code": "CONSECUTIVE_BLOCKS",
+  "urgency": "HIGH",
+  "context": {
+    "cycle": 19269,
+    "active_mode": "DEFEND",
+    "consecutive_blocks": 0,
+    "dd_pct": -3.799172490901892,
+    "equity": 3408.611256512005,
+    "win_rate": 0.0,
+    "top_scores": {
+      "null": 0.0
+    },
+    "adx_threshold": 8.0,
+    "consec_blocks": 10448
+  },
+  "question": "I've been unable to open a new position for 10448 cycles. Scores: {None: 0.0}. Block reasons: []. Is this market-wide or am I too restrictive? What should I adjust to start finding entries again?"
+}
