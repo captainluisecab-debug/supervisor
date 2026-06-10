@@ -39,7 +39,7 @@ KRAKEN_TRUTH_FILE = os.path.join(BASE_DIR, "kraken_state_truth.json")
 
 # Import constants and paths from Governor (single source of truth)
 from supervisor_governor import (
-    CMD_KRAKEN, CMD_SFM, CMD_ALPACA, CMD_ZEROBOT,
+    CMD_KRAKEN, CMD_ALPACA, CMD_ZEROBOT, CMD_DRIFTBOT,  # CMD_SFM dropped — sfm de-wired (D-038)
     REGIME_BEHAVIOR, DEFAULT_BEHAVIOR,
     EXPECTANCY_FREEZE_THRESHOLD,
     ENZOBOT_DIR, ALPACA_DIR,
@@ -51,9 +51,10 @@ EXIT_LOG = os.path.join(ENZOBOT_DIR, "logs", "exit_counterfactuals.jsonl")
 
 SLEEVE_CMD_MAP = {
     "kraken":  CMD_KRAKEN,
-    "sfm":     CMD_SFM,
+    # "sfm" REMOVED — retired/de-wired D-038 (lockstep with governor: no sfm_cmd written -> INV-5 clean)
     "alpaca":  CMD_ALPACA,
     "zerobot": CMD_ZEROBOT,
+    "driftbot": CMD_DRIFTBOT,  # PAPER (D-035)
 }
 
 # INV-3 (regime behavior) skip-list. ZeroBot has its OWN SMA-50 macro filter
@@ -61,7 +62,7 @@ SLEEVE_CMD_MAP = {
 # create double-gating that BLOCKS contrarian Donchian-20 breakouts during
 # crypto bear markets (the trades the rule is designed to catch).
 # Per Opus plan §4 + D-010.
-INV3_SKIP_SLEEVES = frozenset({"zerobot"})
+INV3_SKIP_SLEEVES = frozenset({"zerobot", "driftbot"})  # both have their own SMA-50 macro filter (D-035)
 
 
 # ── Result ───────────────────────────────────────────────────────────
@@ -142,9 +143,10 @@ def _check_regime_behavior_respected() -> List[str]:
 
     sleeve_regimes = {
         "kraken":  crypto_dominant,
-        "sfm":     crypto_dominant,
+        # "sfm" REMOVED — de-wired D-038
         "alpaca":  alpaca_dominant,
         "zerobot": crypto_dominant,  # listed for completeness; skipped via INV3_SKIP_SLEEVES below
+        "driftbot": crypto_dominant,  # PAPER; skipped via INV3_SKIP_SLEEVES (D-035)
     }
 
     for sleeve, path in SLEEVE_CMD_MAP.items():

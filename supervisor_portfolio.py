@@ -14,8 +14,9 @@ from typing import Dict, List, Optional
 from supervisor_settings import (
     ALPACA_API_KEY, ALPACA_BASELINE, ALPACA_SECRET_KEY, ALPACA_STATE,
     ENZOBOT_BASELINE, ENZOBOT_BRAIN, ENZOBOT_STATE,
-    SFMBOT_BASELINE, SFMBOT_STATE, TOTAL_BASELINE,
+    TOTAL_BASELINE,  # SFMBOT_BASELINE/SFMBOT_STATE dropped — sfm retired/de-wired (D-038)
     ZEROBOT_BASELINE, ZEROBOT_BRAIN,
+    DRIFTBOT_BASELINE, DRIFTBOT_BRAIN,
 )
 
 log = logging.getLogger("supervisor_portfolio")
@@ -34,6 +35,7 @@ class SleeveState:
     cycle: int
     health: str                # GOOD / WARN / CRITICAL
     notes: List[str] = field(default_factory=list)
+    paper: bool = False        # PAPER sleeve (D-035) — excluded from real-capital totals
 
 
 @dataclass
@@ -123,55 +125,8 @@ def read_enzobot() -> SleeveState:
     )
 
 
-def read_sfmbot() -> SleeveState:
-    state = _read_json(SFMBOT_STATE)
-    if not state:
-        return SleeveState("sfm_tactical", SFMBOT_BASELINE, SFMBOT_BASELINE,
-                           0, 0, 0, 0, "UNKNOWN", 0, "GOOD",
-                           ["State file not found — bot may not have run yet"])
-
-    usdc    = float(state.get("usdc_balance", 0))
-    sol_usd = float(state.get("sol_usd", 0))
-    positions = state.get("positions", {})
-    deployed = sum(float(p.get("cost_usd", 0)) for p in positions.values() if isinstance(p, dict))
-    equity  = usdc + sol_usd + deployed if (usdc + sol_usd + deployed) > 0 else SFMBOT_BASELINE
-    rpnl    = float(state.get("realized_pnl_usd", 0))
-    pnl_usd = equity - SFMBOT_BASELINE
-    pnl_pct = pnl_usd / SFMBOT_BASELINE * 100 if SFMBOT_BASELINE > 0 else 0
-    cycle   = int(state.get("cycle", 0))
-    open_ct = len(positions)
-
-    notes = []
-    for pair_name, pos in positions.items():
-        if isinstance(pos, dict):
-            notes.append(f"{pair_name}: ${float(pos.get('cost_usd',0)):.0f}")
-
-    # Drawdown proxy: how far equity is below baseline.
-    # sfm_state.json has no equity_peak, so this is baseline-anchored, not peak-anchored.
-    dd_pct = min(0.0, (equity - SFMBOT_BASELINE) / SFMBOT_BASELINE * 100) if SFMBOT_BASELINE > 0 else 0.0
-
-    _sfm_mode = "PAPER"
-    try:
-        _sfm_env_path = os.path.join(r"C:\Projects\sfmbot", ".env")
-        if os.path.exists(_sfm_env_path):
-            for _l in open(_sfm_env_path):
-                if _l.strip().startswith("TRADE_MODE="):
-                    _sfm_mode = _l.strip().split("=",1)[1].strip().strip('"').strip("'")
-    except Exception:
-        pass
-    return SleeveState(
-        name="sfm_tactical",
-        equity_usd=equity,
-        baseline_usd=SFMBOT_BASELINE,
-        pnl_usd=pnl_usd,
-        pnl_pct=pnl_pct,
-        drawdown_pct=dd_pct,
-        open_positions=open_ct,
-        mode=_sfm_mode,
-        cycle=cycle,
-        health=_health(pnl_pct, dd_pct),
-        notes=notes,
-    )
+# read_sfmbot() REMOVED — sfm retired (D-038) and de-wired from the supervisor.
+# Real-capital math was already excluded from sfm (paper=True / not in TOTAL_BASELINE).
 
 
 def read_alpacabot() -> SleeveState:
@@ -270,15 +225,51 @@ def read_zerobot() -> SleeveState:
     )
 
 
+def read_driftbot() -> SleeveState:
+    """Read DriftBot brain_state.json — Donchian-20 BTC PAPER sleeve (D-035).
+    Mirrors read_zerobot; tagged paper=True so it is visible in briefs but
+    EXCLUDED from real-capital totals."""
+    brain = _read_json(DRIFTBOT_BRAIN)
+    if not brain:
+        return SleeveState(
+            name="driftbot_btc",
+            equity_usd=DRIFTBOT_BASELINE, baseline_usd=DRIFTBOT_BASELINE,
+            pnl_usd=0.0, pnl_pct=0.0, drawdown_pct=0.0,
+            open_positions=0, mode="OFFLINE", cycle=0, health="GOOD",
+            notes=["brain_state.json not found — bot not running or first start"],
+            paper=True,
+        )
+    equity = float(brain.get("equity_usd", DRIFTBOT_BASELINE))
+    pnl_usd = equity - DRIFTBOT_BASELINE
+    pnl_pct = (pnl_usd / DRIFTBOT_BASELINE * 100) if DRIFTBOT_BASELINE > 0 else 0.0
+    dd_pct = -float(brain.get("dd_pct", 0.0)) * 100.0
+    open_positions = 1 if brain.get("has_position") else 0
+    cycle = int(brain.get("cycle", 0))
+    mode = str(brain.get("mode", "NORMAL"))
+    notes = []
+    last_reason = str(brain.get("last_reason", ""))
+    if last_reason:
+        notes.append(f"last: {brain.get('last_action','?')} ({last_reason[:40]})")
+    return SleeveState(
+        name="driftbot_btc", equity_usd=equity, baseline_usd=DRIFTBOT_BASELINE,
+        pnl_usd=pnl_usd, pnl_pct=pnl_pct, drawdown_pct=dd_pct,
+        open_positions=open_positions, mode=mode, cycle=cycle,
+        health=_health(pnl_pct, dd_pct), notes=notes, paper=True,
+    )
+
+
 def build_portfolio(peak_equity: float = 0.0) -> PortfolioState:
     sleeves = {
         "kraken_crypto": read_enzobot(),
-        "sfm_tactical":  read_sfmbot(),
+        # sfm_tactical REMOVED — retired D-038, de-wired from supervisor (D-038 cleanup)
         "alpaca_stocks": read_alpacabot(),
         "zerobot_btc":   read_zerobot(),
+        "driftbot_btc":  read_driftbot(),  # PAPER (D-035) — excluded from totals below
     }
 
-    total_equity = sum(s.equity_usd for s in sleeves.values())
+    # Real-capital totals EXCLUDE paper sleeves so paper P&L never trips real
+    # money kill-switches / drawdown breakers (D-035).
+    total_equity = sum(s.equity_usd for s in sleeves.values() if not s.paper)
     total_pnl    = total_equity - TOTAL_BASELINE
     total_pnl_pct = total_pnl / TOTAL_BASELINE * 100
 

@@ -254,7 +254,7 @@ def _execute_adjust_env(action: dict, cycle: int):
     except Exception:
         pass
 
-    bot_dirs = {"enzobot": ENZOBOT_DIR, "sfmbot": SFMBOT_DIR, "alpacabot": ALPACA_DIR}
+    bot_dirs = {"enzobot": ENZOBOT_DIR, "alpacabot": ALPACA_DIR}  # sfmbot removed — de-wired (D-038)
     env_path = os.path.join(bot_dirs.get(bot, ENZOBOT_DIR), ".env")
 
     try:
@@ -296,8 +296,9 @@ def _execute_clear_lock(action: dict, cycle: int):
 
     lock_map = {
         "enzobot":  os.path.join(ENZOBOT_DIR,  "enzobot.lock"),
-        "sfmbot":   os.path.join(SFMBOT_DIR,   "sfmbot.lock"),
+        # sfmbot removed — de-wired (D-038)
         "alpacabot":os.path.join(ALPACA_DIR,   "alpacabot.lock"),
+        "driftbot": r"C:\Projects\cryptobot\engine.lock",  # PAPER (D-035)
     }
     path = lock_map.get(bot)
     if not path:
@@ -334,7 +335,7 @@ def _execute_write_supervisor_cmd(action: dict, cycle: int):
     _CMD_ACTION_COUNT["count"] += 1
 
     # Normalize bot name — Opus may return "enzobot"/"sfmbot"/"alpacabot"
-    _bot_alias = {"enzobot": "kraken", "sfmbot": "sfm", "alpacabot": "alpaca"}
+    _bot_alias = {"enzobot": "kraken", "alpacabot": "alpaca"}  # sfmbot removed — de-wired (D-038)
     bot    = _bot_alias.get(action.get("bot", "kraken"), action.get("bot", "kraken"))
     mode   = action.get("mode", "SCOUT")
     size   = float(action.get("size_mult", 0.5))
@@ -347,8 +348,9 @@ def _execute_write_supervisor_cmd(action: dict, cycle: int):
 
     file_map = {
         "kraken":  os.path.join(COMMANDS_DIR, "kraken_cmd.json"),
-        "sfm":     os.path.join(COMMANDS_DIR, "sfm_cmd.json"),
+        # sfm removed — de-wired (D-038)
         "alpaca":  os.path.join(COMMANDS_DIR, "alpaca_cmd.json"),
+        "driftbot": os.path.join(COMMANDS_DIR, "driftbot_cmd.json"),  # PAPER (D-035)
     }
     path = file_map.get(bot)
     if not path:
@@ -395,7 +397,7 @@ def _execute_restart_bot(action: dict, cycle: int):
         return
     _RESTART_ACTION_COUNT["count"] += 1
 
-    bot_dirs = {"enzobot": ENZOBOT_DIR, "sfmbot": SFMBOT_DIR, "alpacabot": ALPACA_DIR}
+    bot_dirs = {"enzobot": ENZOBOT_DIR, "alpacabot": ALPACA_DIR}  # sfmbot removed — de-wired (D-038)
     bot_dir  = bot_dirs.get(bot, ENZOBOT_DIR)
     flag     = os.path.join(bot_dir, "RESTART_REQUESTED.flag")
 

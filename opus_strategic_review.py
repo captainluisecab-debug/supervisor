@@ -141,6 +141,16 @@ def gather_universe_context() -> dict:
                 "recommended_blocks": alpaca_outcomes.get("recommended_blocks", []),
             },
         },
+        "driftbot_paper": {
+            "note": "PAPER validation sleeve ($0 REAL) — Donchian-20 BTC, 5-day paper "
+                    "window (D-035). Same rule as zerobot. NOT real money; do not size "
+                    "real-capital directives off this.",
+            "equity": sleeves.get("driftbot_btc", {}).get("equity_usd", 0),
+            "pnl_pct": sleeves.get("driftbot_btc", {}).get("pnl_pct", 0),
+            "dd_pct": sleeves.get("driftbot_btc", {}).get("drawdown_pct", 0),
+            "mode": sleeves.get("driftbot_btc", {}).get("mode", "?"),
+            "positions": sleeves.get("driftbot_btc", {}).get("open_positions", 0),
+        },
         "recent_brain_reviews": brain_reviews[-3:],
         "recent_trades": exec_log[-10:],
         "hermes_insights": hermes.get("hermes_insights", []),
@@ -164,9 +174,9 @@ def run_strategic_review() -> dict:
 
     context = gather_universe_context()
 
-    prompt = f"""You are the Chief Strategy Officer for a 4-bot live trading system managing ${context['portfolio']['total_equity']:.2f} of REAL MONEY.
+    prompt = f"""You are the Chief Strategy Officer for a 4-bot live trading system managing ${context['portfolio']['total_equity']:.2f} of REAL MONEY (plus 1 PAPER validation sleeve, driftbot, $0 real — see driftbot_paper; do NOT base real-capital directives on it).
 
-Your job: analyze the last 12 hours of performance across all 4 sleeves and produce SPECIFIC, ACTIONABLE directives for the next 12 hours. Every recommendation must be backed by the outcome data below.
+Your job: analyze the last 12 hours of performance across the 4 REAL sleeves and produce SPECIFIC, ACTIONABLE directives for the next 12 hours. Every recommendation must be backed by the outcome data below. The driftbot paper sleeve is informational only (5-day validation per D-035).
 
 PORTFOLIO STATE:
 {json.dumps(context['portfolio'], indent=2)}

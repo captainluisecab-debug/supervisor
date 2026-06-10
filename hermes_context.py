@@ -308,6 +308,7 @@ def _read_sfm() -> dict:
         "realized_pnl": state.get("realized_pnl_usd", 0),
         "total_trades": state.get("total_trades", 0),
         "winning_trades": state.get("winning_trades", 0),
+        "paper": True,  # PAPER validation sleeve (D-035, 2026-06-06) — paper DD must not page real-money CRITICAL
     }
 
 
@@ -421,7 +422,7 @@ def compute_advisory(regime_label: str, kraken_dd: float,
     (conservative — don't block on absence of evidence); flag OFFLINE in reasoning.
     """
     k = _sleeve_advisory(regime_label, kraken_dd, "kraken")
-    s = _sleeve_advisory(regime_label, sfm_dd, "sfm")
+    # sfm advisory REMOVED — retired/de-wired (D-038)
     a = _sleeve_advisory(regime_label, alpaca_dd, "alpaca")
     if zerobot_offline:
         z = {"mode": "NORMAL", "size_mult": 1.0, "entry_allowed": True,
@@ -430,9 +431,9 @@ def compute_advisory(regime_label: str, kraken_dd: float,
     else:
         z = _sleeve_advisory(regime_label, zerobot_dd, "zerobot")
     return {
-        "kraken": k, "sfm": s, "alpaca": a, "zerobot": z,
+        "kraken": k, "alpaca": a, "zerobot": z,  # sfm removed — de-wired (D-038)
         "note": f"Hermes advisory: {regime_label}, K={kraken_dd:.1f}% "
-                f"S={sfm_dd:.1f}% A={alpaca_dd:.1f}% Z={zerobot_dd:.1f}%"
+                f"A={alpaca_dd:.1f}% Z={zerobot_dd:.1f}%"
                 + (" (OFFLINE)" if zerobot_offline else ""),
     }
 
@@ -480,7 +481,7 @@ def _detect_events(kraken: dict, sfm: dict, alpaca: dict, zerobot: dict,
         escalations.append({"severity": "HIGH", "type": "kraken_dd_critical",
                             "detail": f"Kraken DD at {kraken.get('dd_pct', 0):.1f}% — below -10% threshold",
                             "ts": now_iso})
-    if sfm.get("dd_pct", 0) < -10:
+    if not sfm.get("paper") and sfm.get("dd_pct", 0) < -10:
         escalations.append({"severity": "HIGH", "type": "sfm_dd_critical",
                             "detail": f"SFM DD at {sfm.get('dd_pct', 0):.1f}% — below -10% threshold",
                             "ts": now_iso})
@@ -548,7 +549,7 @@ def build_context(regime_label: str, regime_confidence: float) -> dict:
     global _last_context_ts
 
     kraken = _read_kraken()
-    sfm = _read_sfm()
+    sfm = {}  # sfm RETIRED/de-wired (D-038): empty -> dropped from universe headline + all sums
     alpaca = _read_alpaca()
     zerobot = _read_zerobot()
 

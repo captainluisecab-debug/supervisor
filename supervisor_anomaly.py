@@ -31,7 +31,8 @@ SUPERVISOR_DIR = os.path.dirname(os.path.abspath(__file__))
 
 LOCK_FILES = [
     os.path.join(ENZOBOT_DIR,  "enzobot.lock"),
-    os.path.join(SFMBOT_DIR,   "sfmbot.lock"),
+    # sfmbot.lock REMOVED — sfm retired/de-wired (D-038): a stale lock from the stopped
+    # service would otherwise trip STALE_LOCK_FILE HIGH every cycle.
     os.path.join(ALPACA_DIR,   "alpacabot.lock"),
 ]
 
@@ -117,12 +118,11 @@ class AnomalyDetector:
 
     # ── Individual checks ──────────────────────────────────────────────
 
-    def _check_entry_drought(self, enzobot: dict, sfm: dict) -> Optional[Anomaly]:
+    def _check_entry_drought(self, enzobot: dict) -> Optional[Anomaly]:
         """No new trade opened across crypto bots for too long."""
         ez_ts  = int(enzobot.get("last_cycle_ts", 0))
-        sfm_ts = int((sfm.get("position") or {}).get("entry_ts", 0))
-
-        latest_trade = max(ez_ts, sfm_ts)
+        # sfm term removed — retired/de-wired (D-038)
+        latest_trade = ez_ts
 
         # If last trade timestamp advanced, reset counter
         if latest_trade > self._last_enzobot_trade_ts:
@@ -348,18 +348,18 @@ class AnomalyDetector:
         enzobot     = self._enzobot_state()
         brain_state = self._enzobot_brain_state()
         policy      = self._enzobot_policy()
-        sfm         = self._sfm_state()
+        # sfm state read REMOVED — retired/de-wired (D-038)
         alpaca      = self._alpaca_state()
         log_tail    = self._read_enzobot_log_tail()
 
         # Run all checks
         checks = [
-            self._check_entry_drought(enzobot, sfm),
+            self._check_entry_drought(enzobot),
             self._check_adx_blocking(log_tail),
             self._check_attack_dd_blocked(enzobot, policy),
             self._check_brain_churn(brain_state),
             self._check_frozen_cycle(enzobot, "enzobot"),
-            self._check_frozen_cycle(sfm, "sfm"),
+            # sfm frozen-cycle check REMOVED — retired/de-wired (D-038)
             self._check_frozen_cycle(alpaca, "alpaca"),
         ]
 

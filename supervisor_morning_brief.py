@@ -36,6 +36,7 @@ CMD_FILES = {
     "sfm":     os.path.join(COMMANDS_DIR, "sfm_cmd.json"),
     "alpaca":  os.path.join(COMMANDS_DIR, "alpaca_cmd.json"),
     "zerobot": os.path.join(COMMANDS_DIR, "zerobot_cmd.json"),
+    "driftbot": os.path.join(COMMANDS_DIR, "driftbot_cmd.json"),
 }
 
 # Fire window: 9:00–9:14 AM ET (14:00–14:14 UTC during EDT)
@@ -164,18 +165,21 @@ def generate_brief(portfolio, regime, allocations, recent_outcomes,
 
     # ── Sleeve Status ────────────────────────────────────────────────────
     lines.append(_bar("SLEEVE STATUS"))
+    lines.append("  [SFM TACTICAL ] RETIRED (D-038) — paper sleeve de-wired, service stopped")
+    lines.append("")
     sleeve_labels = {
         "kraken_crypto": "KRAKEN CRYPTO",
-        "sfm_tactical":  "SFM TACTICAL ",
+        # sfm_tactical RETIRED (D-038) — tombstone above; no live sleeve render
         "alpaca_stocks": "ALPACA STOCKS",
         "zerobot_btc":   "ZEROBOT BTC  ",
+        "driftbot_btc":  "DRIFTBOT PAPR",
     }
     # Map sleeve_labels key -> CMD_FILES key (cmd lookup expects the bot-name prefix)
     _cmd_key_map = {
         "kraken_crypto": "kraken",
-        "sfm_tactical":  "sfm",
         "alpaca_stocks": "alpaca",
         "zerobot_btc":   "zerobot",
+        "driftbot_btc":  "driftbot",
     }
     for key, label in sleeve_labels.items():
         s = portfolio.sleeves.get(key)
@@ -333,11 +337,9 @@ def generate_brief(portfolio, regime, allocations, recent_outcomes,
     # ── Today's Plan ─────────────────────────────────────────────────────
     lines.append(_bar("TODAY'S PLAN  (current brain stance)"))
     k_cmd = _read_cmd("kraken")
-    s_cmd = _read_cmd("sfm")
-    a_cmd = _read_cmd("alpaca")
+    a_cmd = _read_cmd("alpaca")  # sfm removed — retired/de-wired (D-038)
     lines += [
         f"  Kraken crypto:  {k_cmd.get('mode','?')} {k_cmd.get('size_mult',0):.1f}x",
-        f"  SFM tactical:   {s_cmd.get('mode','?')} {s_cmd.get('size_mult',0):.1f}x",
         f"  Alpaca stocks:  {a_cmd.get('mode','?')} {a_cmd.get('size_mult',0):.1f}x",
         "",
         "  Brain fires every 30 min — stance will update as markets evolve.",

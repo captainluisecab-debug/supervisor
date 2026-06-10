@@ -97,6 +97,8 @@ CMD_SFM     = os.path.join(BASE_DIR, "commands", "sfm_cmd.json")
 CMD_ALPACA  = os.path.join(BASE_DIR, "commands", "alpaca_cmd.json")
 CMD_ZEROBOT = os.path.join(BASE_DIR, "commands", "zerobot_cmd.json")
 ZEROBOT_DIR = r"C:\Projects\zerobot"
+CMD_DRIFTBOT = os.path.join(BASE_DIR, "commands", "driftbot_cmd.json")
+DRIFTBOT_DIR = r"C:\Projects\cryptobot"  # PAPER (D-035)
 # Kraken single source of truth — governor consolidates all inputs every cycle
 KRAKEN_TRUTH_FILE = os.path.join(BASE_DIR, "kraken_state_truth.json")
 
@@ -452,6 +454,40 @@ def _read_zerobot_state() -> dict:
         "dd_brake_active": bool(brain.get("dd_brake_active", False)),
         "mode": str(brain.get("mode", "NORMAL")),
         # No pair_regime — zerobot uses its OWN SMA-50 macro filter, not regime classifier.
+    }
+
+
+def _read_driftbot_state() -> dict:
+    """Read driftbot brain_state.json — Donchian-20 BTC PAPER sleeve (D-035).
+
+    Schema-tolerant: reads the supervisor-vocabulary derived fields (equity_usd,
+    dd_pct, has_position) that the engine now writes; falls back to deriving
+    equity from cash + position MtM if a pre-derived file is encountered.
+    PAPER ($0 real) — excluded from real-capital universe math.
+    """
+    brain = _read_json(os.path.join(DRIFTBOT_DIR, "brain_state.json"))
+    baseline = 3408.0
+    equity = brain.get("equity_usd")
+    if equity is None:  # fallback for a pre-derived-fields file
+        cash = float(brain.get("cash", baseline))
+        pos = (brain.get("positions", {}) or {}).get("BTC/USD", {}) or {}
+        qty = float(pos.get("qty", 0) or 0)
+        last = float(pos.get("last_price", 0) or 0)
+        equity = cash + (qty * last if pos.get("side") == "long" else 0.0)
+    equity = float(equity)
+    dd_frac = float(brain.get("dd_pct", 0.0) or 0.0)
+    has_pos = bool(brain.get("has_position", (brain.get("positions", {}) or {}).get("BTC/USD", {}).get("qty", 0)))
+    return {
+        "sleeve": "driftbot",
+        "paper": True,
+        "equity": equity,
+        "dd_pct": -dd_frac * 100.0,
+        "realized_pnl": equity - baseline,
+        "total_trades": 0, "winning_trades": 0, "losing_trades": 0,
+        "open_positions": 1 if has_pos else 0,
+        "consecutive_losses": int(brain.get("consecutive_losses", 0) or 0),
+        "dd_brake_active": bool(brain.get("dd_brake_active", False)),
+        "mode": str(brain.get("mode", "NORMAL")),
     }
 
 
@@ -1246,6 +1282,59 @@ def evaluate_zerobot(zerobot_state: dict, cycle: int, supervisor_regime: str,
     return decisions
 
 
+def evaluate_driftbot(driftbot_state: dict, cycle: int, supervisor_regime: str,
+                      hermes_advisory: dict = None) -> List[GovernorDecision]:
+    """Evaluate DriftBot sleeve — Donchian-20 BTC PAPER (D-035). Identical mode-gating
+    to evaluate_zerobot (same rule + SMA-50 macro filter): governor is gentle, only
+    SCOUT on REDUCE regime; the strategy's own gates decide otherwise. PAPER, $0."""
+    now_iso = datetime.now(timezone.utc).isoformat()
+    behavior = get_regime_behavior(supervisor_regime)
+    regime_mode = behavior["mode"]
+    metrics = {
+        "equity": round(driftbot_state.get("equity", 0), 2),
+        "open_positions": driftbot_state.get("open_positions", 0),
+        "consecutive_losses": driftbot_state.get("consecutive_losses", 0),
+        "dd_brake_active": driftbot_state.get("dd_brake_active", False),
+        "regime": supervisor_regime, "regime_mode": regime_mode, "paper": True,
+    }
+    decisions = []
+    if regime_mode == "REDUCE":
+        decisions.append(GovernorDecision(
+            ts=now_iso, cycle=cycle, action="DRIFTBOT_SCOUT", sleeve="driftbot",
+            reason=f"Regime={supervisor_regime} (mode=REDUCE) -> SCOUT (block new entries).",
+            shadow=SHADOW_MODE, metrics=metrics))
+        _write_command_file(CMD_DRIFTBOT, "SCOUT", 0.5, False,
+                            f"Governor SCOUT: regime={supervisor_regime}", "driftbot",
+                            dominant_regime_override=supervisor_regime)
+    else:
+        decisions.append(GovernorDecision(
+            ts=now_iso, cycle=cycle, action="DRIFTBOT_TRADE_ACTIVE", sleeve="driftbot",
+            reason=f"Regime={supervisor_regime} -> NORMAL (strategy's own gates apply).",
+            shadow=SHADOW_MODE, metrics=metrics))
+        _write_command_file(CMD_DRIFTBOT, "NORMAL", 1.0, True,
+                            f"Governor NORMAL: regime={supervisor_regime}", "driftbot",
+                            dominant_regime_override=supervisor_regime)
+    _db_dd = driftbot_state.get("dd_pct", 0)
+    _hermes_entry = (hermes_advisory or {}).get("driftbot", {}).get("entry_allowed", True)
+    if not _hermes_entry:
+        decisions.append(GovernorDecision(
+            ts=now_iso, cycle=cycle, action="HERMES_DD_OVERRIDE", sleeve="driftbot",
+            reason=f"Hermes advisory: entry_allowed=false (DD={_db_dd:.1f}%) — tighten-only override",
+            shadow=SHADOW_MODE, metrics=metrics))
+        _write_command_file(CMD_DRIFTBOT, "DEFENSE", 0.0, False,
+                            f"Governor: Hermes DD override (DD={_db_dd:.1f}%)", "driftbot",
+                            dominant_regime_override=supervisor_regime)
+    if decisions:
+        actions = {d.action for d in decisions}
+        if "HERMES_DD_OVERRIDE" in actions:
+            decisions[0].classification = "OVERRIDE"
+        elif "DRIFTBOT_TRADE_ACTIVE" in actions:
+            decisions[0].classification = "ALLOW"
+        else:
+            decisions[0].classification = "REDUCE"
+    return decisions
+
+
 # ── Main entry point ──────────────────────────────────────────────────
 
 def run_governor(cycle: int) -> List[GovernorDecision]:
@@ -1259,9 +1348,10 @@ def run_governor(cycle: int) -> List[GovernorDecision]:
 
     # Read states
     enzo = _read_enzobot_state()
-    sfm = _read_sfm_state()
+    sfm = {}  # sfm RETIRED/de-wired (D-038): empty -> all governor sums add 0, no sfm_cmd written
     alpaca = _read_alpaca_state()
     zerobot = _read_zerobot_state()
+    driftbot = _read_driftbot_state()  # PAPER (D-035)
 
     # Read Hermes context (advisory input — governor decides, Hermes advises)
     _hermes_ctx = _read_json(os.path.join(BASE_DIR, "hermes_context.json"))
@@ -1274,16 +1364,15 @@ def run_governor(cycle: int) -> List[GovernorDecision]:
     _strat_age_h = (time.time() - _parse_ts(_strat_ts)) / 3600 if _strat_ts else 999
     if _strategic and _strat_age_h < 14:
         _k_dir = _strategic.get("kraken_directive", {})
-        _s_dir = _strategic.get("sfm_directive", {})
-        _a_dir = _strategic.get("alpaca_directive", {})
+        _a_dir = _strategic.get("alpaca_directive", {})  # sfm_directive dropped — de-wired (D-038)
         _posture_map = {"AGGRESSIVE": 1.2, "MODERATE": 0.8, "DEFENSIVE": 0.4, "HOLD": 1.0}
-        for _sleeve_key, _dir in [("kraken", _k_dir), ("sfm", _s_dir), ("alpaca", _a_dir)]:
+        for _sleeve_key, _dir in [("kraken", _k_dir), ("alpaca", _a_dir)]:
             _posture = _dir.get("posture", "HOLD")
             _mult = _posture_map.get(_posture, 1.0)
             _hermes_advisory.setdefault(_sleeve_key, {})["strategic_size_mult"] = _mult
-        log.info("[GOVERNOR] Strategic directive loaded (age=%.1fh): K=%s S=%s A=%s",
+        log.info("[GOVERNOR] Strategic directive loaded (age=%.1fh): K=%s A=%s",
                  _strat_age_h,
-                 _k_dir.get("posture", "?"), _s_dir.get("posture", "?"), _a_dir.get("posture", "?"))
+                 _k_dir.get("posture", "?"), _a_dir.get("posture", "?"))
 
     # AUTHORITATIVE regime: Governor classifies from per-pair data (most granular).
     # Brain uses macro regime (RISK_ON/OFF) for advisory only — governor overrides.
@@ -1312,11 +1401,12 @@ def run_governor(cycle: int) -> List[GovernorDecision]:
     #   SFM     -> crypto_regime (also crypto sleeve)
     #   Alpaca  -> stock_regime  (stock pair_regime; ISSUE-013 F1 decoupling)
     all_decisions.extend(evaluate_kraken(enzo, kraken_exits, cycle, _hermes_advisory))
-    all_decisions.extend(evaluate_sfm(sfm, cycle, crypto_regime, _hermes_advisory))
+    # evaluate_sfm REMOVED — sfm retired/de-wired (D-038): no sfm decision, no sfm_cmd, no EFFECTIVE entry
     all_decisions.extend(evaluate_alpaca(alpaca, cycle, stock_regime, _hermes_advisory))
     # ZeroBot: paper Donchian-20 BTC sleeve. Uses crypto_regime (BTC-driven)
     # but the strategy's own SMA-50 macro filter is the primary gate (per L-009/spec §7.3).
     all_decisions.extend(evaluate_zerobot(zerobot, cycle, crypto_regime, _hermes_advisory))
+    all_decisions.extend(evaluate_driftbot(driftbot, cycle, crypto_regime, _hermes_advisory))
 
     # ── Cross-sleeve correlation guard ─────────────────────────────────
     # If both crypto sleeves (Kraken + SFM) are >70% deployed AND BTC dropped
@@ -1328,12 +1418,12 @@ def run_governor(cycle: int) -> List[GovernorDecision]:
         now_iso = datetime.now(timezone.utc).isoformat()
         log.warning("[GOVERNOR] CORRELATION GUARD: both crypto sleeves >70%% deployed "
                     "AND BTC -%s%% in 1h — reducing to 50%% size", abs(_btc_1h))
-        for _sleeve, _cmd_path in [("kraken", CMD_KRAKEN), ("sfm", CMD_SFM)]:
+        for _sleeve, _cmd_path in [("kraken", CMD_KRAKEN)]:  # sfm removed — de-wired (D-038)
             _write_command_file(_cmd_path, "SCOUT", 0.5, True,
                                 f"Governor: correlation guard — BTC {_btc_1h:.1f}% 1h, both crypto >70% deployed",
                                 _sleeve)
         all_decisions.append(GovernorDecision(
-            ts=now_iso, cycle=cycle, action="CORRELATION_GUARD", sleeve="kraken+sfm",
+            ts=now_iso, cycle=cycle, action="CORRELATION_GUARD", sleeve="kraken",
             reason=f"BTC {_btc_1h:.1f}% 1h, both >70% deployed — reduced to 50% size",
             shadow=SHADOW_MODE, metrics={},
         ))
@@ -1354,7 +1444,7 @@ def run_governor(cycle: int) -> List[GovernorDecision]:
                 now_iso = datetime.now(timezone.utc).isoformat()
                 log.warning("[GOVERNOR] UNIVERSE CIRCUIT BREAKER: equity dropped %.1f%% "
                             "in 4h ($%.2f -> $%.2f) — ALL DEFENSE", _uni_dd_4h, _oldest_eq, _total_eq_now)
-                for _sleeve, _cmd_path in [("kraken", CMD_KRAKEN), ("sfm", CMD_SFM), ("alpaca", CMD_ALPACA), ("zerobot", CMD_ZEROBOT)]:
+                for _sleeve, _cmd_path in [("kraken", CMD_KRAKEN), ("alpaca", CMD_ALPACA), ("zerobot", CMD_ZEROBOT)]:  # sfm removed — de-wired (D-038)
                     _write_command_file(_cmd_path, "DEFENSE", 0.0, False,
                                         f"Governor: universe circuit breaker — {_uni_dd_4h:.1f}% in 4h",
                                         _sleeve, force_flatten=False)
