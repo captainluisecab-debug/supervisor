@@ -411,8 +411,20 @@ def _read_sfm_state() -> dict:
 def _read_alpaca_state() -> dict:
     state = _read_json(os.path.join(ALPACA_DIR, "alpaca_state.json"))
     positions = state.get("positions", {})
-    equity = 500 + state.get("realized_pnl_usd", 0)  # baseline + realized
-    dd_pct = (equity - 500) / 500 * 100 if equity < 500 else 0
+    # D-051 corruption #3: source LIVE Alpaca equity (mirror supervisor_portfolio.read_alpacabot),
+    # not a hardcoded "500 + realized" (understated ~$545.84 vs real ~$1060.86). ALPACA_BASELINE
+    # imported (=1000) — never a numeric literal. This equity feeds the universe DD circuit breaker.
+    from supervisor_settings import ALPACA_API_KEY, ALPACA_SECRET_KEY, ALPACA_BASELINE
+    open_live = None
+    try:
+        from alpaca.trading.client import TradingClient
+        _c = TradingClient(ALPACA_API_KEY, ALPACA_SECRET_KEY, paper=ALPACA_API_KEY.startswith("PK"))
+        equity = float(_c.get_account().equity)
+        open_live = len(_c.get_all_positions())
+    except Exception as exc:
+        log.warning("[GOVERNOR] Alpaca live read failed: %s — baseline+realized fallback", exc)
+        equity = ALPACA_BASELINE + float(state.get("realized_pnl_usd", 0))
+    dd_pct = (equity - ALPACA_BASELINE) / ALPACA_BASELINE * 100 if equity < ALPACA_BASELINE else 0.0
     return {
         "sleeve": "alpaca",
         "equity": equity,
@@ -421,7 +433,7 @@ def _read_alpaca_state() -> dict:
         "total_trades": state.get("total_trades", 0),
         "winning_trades": state.get("winning_trades", 0),
         "losing_trades": state.get("losing_trades", 0),
-        "open_positions": len(positions),
+        "open_positions": open_live if open_live is not None else len(positions),
         "breakeven_armed": list(state.get("breakeven_armed", [])),
         "pair_regime": dict(state.get("pair_regime", {}) or {}),
     }
