@@ -54,7 +54,10 @@ DRIFTBOT_BASELINE = _f("DRIFTBOT_BASELINE", 3408.00)  # PAPER sleeve's own DD ba
 # DRIFTBOT and SFMBOT are PAPER ($0 real) — DELIBERATELY EXCLUDED from the real-capital
 # TOTAL_BASELINE so paper P&L never distorts real-money drawdown circuit breakers (D-035).
 # sfm is PAPER as of 2026-06-06 ($5,000 sim validation sleeve) — excluded here.
-TOTAL_BASELINE   = ENZOBOT_BASELINE + ALPACA_BASELINE + ZEROBOT_BASELINE
+# D-052: ENZOBOT_BASELINE dropped from TOTAL_BASELINE — enzobot soft-retired (D-001) and
+# de-wired (D-052). enzobot shares the SAME Kraken account as zerobot (proven: identical
+# live balances) — counting both double-counted ~$3,408. Kraken counted ONCE via ZEROBOT_BASELINE.
+TOTAL_BASELINE   = ALPACA_BASELINE + ZEROBOT_BASELINE
 
 # Risk thresholds
 KILL_SWITCH_DD_PCT    = _f("KILL_SWITCH_DD_PCT", 10.0)

@@ -122,6 +122,10 @@ def read_enzobot() -> SleeveState:
         cycle=cycle,
         health=_health(pnl_pct, dd_pct),
         notes=notes,
+        # D-052: excluded from real-capital totals — enzobot shares the SAME Kraken account
+        # as zerobot_btc (proven: identical live balances). Counting both double-counts ~$3,408.
+        # NOT actually paper money; this flag de-duplicates so Kraken is counted ONCE via zerobot.
+        paper=True,
     )
 
 

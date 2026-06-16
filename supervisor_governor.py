@@ -1430,7 +1430,10 @@ def run_governor(cycle: int) -> List[GovernorDecision]:
 
     # ── Universe DD circuit breaker ──────────────────────────────────
     # If total universe equity drops >5% in any 4h window, all sleeves go DEFENSE.
-    _total_eq_now = enzo.get("equity", 0) + sfm.get("equity", 0) + alpaca.get("equity", 0) + zerobot.get("equity", 0)
+    # D-052: enzo (kraken_crypto) dropped — shares the SAME Kraken account as zerobot (identical
+    # live balances); counting both double-counted universe equity and could fire a phantom -43%
+    # DEFENSE cascade. Kraken counted ONCE via zerobot.
+    _total_eq_now = sfm.get("equity", 0) + alpaca.get("equity", 0) + zerobot.get("equity", 0)
     if not hasattr(run_governor, "_equity_history"):
         run_governor._equity_history = []
     run_governor._equity_history.append((_total_eq_now, time.time()))
