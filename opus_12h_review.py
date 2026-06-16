@@ -28,6 +28,7 @@ BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 BRIEF_FILE     = os.path.join(BASE_DIR, "governor_universe_brief.json")
 HERMES_FILE    = os.path.join(BASE_DIR, "hermes_context.json")
 REPORT_FILE    = os.path.join(BASE_DIR, "opus_12h_report.md")
+SUPERVISOR_REPORT = os.path.join(BASE_DIR, "supervisor_report.json")  # D-051: canonical 4-sleeve PnL (single source of truth)
 DECISIONS_LOG  = os.path.join(BASE_DIR, "governor_decisions.jsonl")
 OUTCOMES_LOG   = os.path.join(BASE_DIR, "brain_outcomes.jsonl")
 FIX_LOG        = os.path.join(BASE_DIR, "opus_fix_log.jsonl")
@@ -246,19 +247,34 @@ def read_previous_pnl():
     return None
 
 
+def _read_supervisor_report():
+    """D-051: canonical 4-sleeve portfolio + baseline (single source of truth).
+    The governor brief is a de-wire residual (no zerobot, $500 alpaca baseline) — read the
+    report the main portfolio writes correctly each cycle instead of re-summing the brief."""
+    try:
+        with open(SUPERVISOR_REPORT, encoding="utf-8") as f:
+            return json.load(f)
+    except Exception:
+        return {}
+
+
 def save_pnl_snapshot(brief):
-    """Save current PnL for comparison in the next 12h review."""
+    """Save current PnL for comparison in the next 12h review.
+    D-051: sourced from canonical supervisor_report.json (4-sleeve; driftbot paper-excluded
+    via total_equity_usd), NOT re-summed from the stale governor brief that dropped zerobot."""
+    rep = _read_supervisor_report()
+    pf = rep.get("portfolio", {})
+    sl = rep.get("sleeves", {})
+    def _eq(name): return float(sl.get(name, {}).get("equity_usd", 0) or 0)
     snapshot = {
         "ts": datetime.now(timezone.utc).isoformat(),
-        "universe_equity": (
-            brief.get("kraken", {}).get("equity", 0) +
-            brief.get("sfm", {}).get("equity", 0) +
-            brief.get("alpaca", {}).get("equity", 0)
-        ),
-        "kraken_equity": brief.get("kraken", {}).get("equity", 0),
-        "sfm_equity": brief.get("sfm", {}).get("equity", 0),
-        "alpaca_equity": brief.get("alpaca", {}).get("equity", 0),
-        "kraken_dd": brief.get("kraken", {}).get("dd_pct", 0),
+        "universe_equity": float(pf.get("total_equity_usd", 0) or 0),
+        "universe_baseline": float(pf.get("total_baseline_usd", 0) or 0),
+        "kraken_equity": _eq("kraken_crypto"),
+        "zerobot_equity": _eq("zerobot_btc"),
+        "alpaca_equity": _eq("alpaca_stocks"),
+        "sfm_equity": 0,  # retired (D-038)
+        "kraken_dd": float(sl.get("kraken_crypto", {}).get("drawdown_pct", 0) or 0),
     }
     try:
         with open(PNL_SNAPSHOT, "w", encoding="utf-8") as f:
@@ -313,12 +329,12 @@ def build_prompt(brief, decisions, outcomes, prev_pnl, current_pnl, review_memor
     if prev_pnl:
         universe_delta = current_pnl["universe_equity"] - prev_pnl.get("universe_equity", current_pnl["universe_equity"])
         kraken_delta = current_pnl["kraken_equity"] - prev_pnl.get("kraken_equity", current_pnl["kraken_equity"])
-        sfm_delta = current_pnl["sfm_equity"] - prev_pnl.get("sfm_equity", current_pnl["sfm_equity"])
+        zerobot_delta = current_pnl.get("zerobot_equity", 0) - prev_pnl.get("zerobot_equity", current_pnl.get("zerobot_equity", 0))
         alpaca_delta = current_pnl["alpaca_equity"] - prev_pnl.get("alpaca_equity", current_pnl["alpaca_equity"])
         pnl_context = f"""PNL DELTA (vs 12 hours ago):
   Universe: ${universe_delta:+.2f} ({'better' if universe_delta > 0 else 'worse' if universe_delta < 0 else 'flat'})
   Kraken:   ${kraken_delta:+.2f}
-  SFM:      ${sfm_delta:+.2f}
+  ZeroBot:  ${zerobot_delta:+.2f}
   Alpaca:   ${alpaca_delta:+.2f}
   Previous snapshot: {prev_pnl.get('ts', '?')}"""
     else:
@@ -355,9 +371,9 @@ GOVERNOR UNIVERSE BRIEF:
 
 CURRENT PNL:
   Universe equity: ${current_pnl['universe_equity']:.2f}
-  Universe PnL vs baseline ($6,969.62): ${current_pnl['universe_equity'] - 6969.62:+.2f}
+  Universe PnL vs baseline (${current_pnl.get('universe_baseline', 0):,.2f}): ${current_pnl['universe_equity'] - current_pnl.get('universe_baseline', 0):+.2f}
   Kraken: ${current_pnl['kraken_equity']:.2f} (DD {current_pnl.get('kraken_dd', 0):.1f}%)
-  SFM: ${current_pnl['sfm_equity']:.2f}
+  ZeroBot: ${current_pnl.get('zerobot_equity', 0):.2f}
   Alpaca: ${current_pnl['alpaca_equity']:.2f}
 
 GOVERNOR DECISION SUMMARY (last 12h):
@@ -435,10 +451,10 @@ RESPOND IN THIS EXACT MANDATORY FORMAT (all sections required, every 12 hours, 7
 | Metric | Value |
 |--------|-------|
 | Universe equity now | $X |
-| Universe PnL (vs $6,969.62 baseline) | $X |
+| Universe PnL (vs baseline) | $X |
 | Delta vs 12 hours ago | $X (better/flat/worse) |
 | Kraken delta | $X |
-| SFM delta | $X |
+| ZeroBot delta | $X |
 | Alpaca delta | $X |
 
 ## 2. UNIVERSE STATUS
