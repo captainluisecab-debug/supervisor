@@ -1159,6 +1159,21 @@ def evaluate_alpaca(alpaca_state: dict, cycle: int, supervisor_regime: str,
         _write_command_file(CMD_ALPACA, "NORMAL", 1.0, True,
                             f"Governor TRADE: {supervisor_regime}", "alpaca",
                             dominant_regime_override=supervisor_regime)
+    elif regime_mode == "SCOUT":
+        # D-053: SCOUT (RANGING / TRENDING_DOWN) was an unhandled dispatch gap that
+        # fell through to the cautious default (entry_allowed=False) below — this
+        # vetoed ALL alpaca entries from 2026-06-01 onward when stocks stopped
+        # trending up. REGIME_BEHAVIOR already declares entries_allowed=True for
+        # these regimes. Write NORMAL (clears engine sup_mode!=NORMAL veto) at
+        # reduced size 0.3; the 8-state classifier still gates every entry.
+        decisions.append(GovernorDecision(
+            ts=now_iso, cycle=cycle, action="TRADE_ACTIVE", sleeve="alpaca",
+            reason=f"Regime={supervisor_regime} -> SCOUT. Reduced-size entries allowed (trader-gated).",
+            shadow=SHADOW_MODE, metrics=metrics,
+        ))
+        _write_command_file(CMD_ALPACA, "NORMAL", 0.3, True,
+                            f"Governor SCOUT: {supervisor_regime} (reduced-size, trader-gated)", "alpaca",
+                            dominant_regime_override=supervisor_regime)
 
     # Win rate alert
     if total >= 10 and wins == 0:
