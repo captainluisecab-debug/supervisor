@@ -377,11 +377,14 @@ def _read_jsonl_tail(path: str, n: int = 50) -> List[dict]:
 
 
 def _read_enzobot_state() -> dict:
-    """Read Enzobot portfolio and feedback state."""
+    """D-063 Phase A (SHADOW): the governor STILL runs on enzobot; the new kraken_account_monitor is
+    read in SHADOW each cycle and logged for comparison ([D063-BAKE-SHADOW]). After the bake confirms
+    the monitor matches enzobot (regime + equity), Phase B flips the return to the monitor and removes
+    the enzobot read. NO behavior change to the live governor during the bake."""
     feedback = _read_json(os.path.join(ENZOBOT_DIR, "supervisor_feedback.json"))
     state = _read_json(os.path.join(ENZOBOT_DIR, "state.json"))
     brain = _read_json(os.path.join(ENZOBOT_DIR, "brain_state.json"))
-    return {
+    enzo = {
         "sleeve": "kraken",
         "equity": feedback.get("portfolio", {}).get("equity", 0),
         "dd_pct": feedback.get("portfolio", {}).get("dd_pct", 0),
@@ -392,6 +395,20 @@ def _read_enzobot_state() -> dict:
         "pair_scores": feedback.get("pair_scores", {}),
         "mode": brain.get("active_mode", "UNKNOWN"),
     }
+    # D-063 Phase-A CUTOVER: the governor now runs on the MONITOR (enzobot-independent). enzobot is kept
+    # as a comparison reference + fallback ONLY until Phase B removes it. The comparison log stays so any
+    # divergence is visible; Phase B deletes the enzobot read + this whole block.
+    try:
+        from kraken_account_monitor import read_kraken_account
+        mon = read_kraken_account()
+        mr = (mon.get("pair_regime") or {}).get("BTC/USD")
+        er = (enzo.get("pair_regime") or {}).get("BTC/USD")
+        log.info("[D063-BAKE] LIVE-ON-MONITOR regime=%s equity=%.2f | enzobot(ref) regime=%s equity=%.2f | match=%s",
+                 mr, mon.get("equity") or 0.0, er, enzo.get("equity") or 0.0, mr == er)
+        return mon
+    except Exception as e:
+        log.warning("[D063-BAKE] monitor read FAILED — FALLBACK to enzobot this cycle: %s", e)
+        return enzo
 
 
 def _read_sfm_state() -> dict:
