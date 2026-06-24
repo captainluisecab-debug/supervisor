@@ -36,7 +36,7 @@ CMD_FILES = {
     "sfm":     os.path.join(COMMANDS_DIR, "sfm_cmd.json"),
     "alpaca":  os.path.join(COMMANDS_DIR, "alpaca_cmd.json"),
     "zerobot": os.path.join(COMMANDS_DIR, "zerobot_cmd.json"),
-    "driftbot": os.path.join(COMMANDS_DIR, "driftbot_cmd.json"),
+    # driftbot removed — retired/de-wired (D-062)
 }
 
 # Fire window: 9:00–9:14 AM ET (14:00–14:14 UTC during EDT)
@@ -172,14 +172,14 @@ def generate_brief(portfolio, regime, allocations, recent_outcomes,
         # sfm_tactical RETIRED (D-038) — tombstone above; no live sleeve render
         "alpaca_stocks": "ALPACA STOCKS",
         "zerobot_btc":   "ZEROBOT BTC  ",
-        "driftbot_btc":  "DRIFTBOT PAPR",
+        # driftbot_btc removed — retired/de-wired (D-062)
     }
     # Map sleeve_labels key -> CMD_FILES key (cmd lookup expects the bot-name prefix)
     _cmd_key_map = {
         "kraken_crypto": "kraken",
         "alpaca_stocks": "alpaca",
         "zerobot_btc":   "zerobot",
-        "driftbot_btc":  "driftbot",
+        # driftbot_btc removed — retired/de-wired (D-062)
     }
     for key, label in sleeve_labels.items():
         s = portfolio.sleeves.get(key)

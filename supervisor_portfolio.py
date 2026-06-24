@@ -16,7 +16,7 @@ from supervisor_settings import (
     ENZOBOT_BASELINE, ENZOBOT_BRAIN, ENZOBOT_STATE,
     TOTAL_BASELINE,  # SFMBOT_BASELINE/SFMBOT_STATE dropped — sfm retired/de-wired (D-038)
     ZEROBOT_BASELINE, ZEROBOT_BRAIN,
-    DRIFTBOT_BASELINE, DRIFTBOT_BRAIN,
+    # DRIFTBOT_BASELINE/DRIFTBOT_BRAIN dropped — driftbot retired/de-wired (D-062)
 )
 
 log = logging.getLogger("supervisor_portfolio")
@@ -229,37 +229,7 @@ def read_zerobot() -> SleeveState:
     )
 
 
-def read_driftbot() -> SleeveState:
-    """Read DriftBot brain_state.json — Donchian-20 BTC PAPER sleeve (D-035).
-    Mirrors read_zerobot; tagged paper=True so it is visible in briefs but
-    EXCLUDED from real-capital totals."""
-    brain = _read_json(DRIFTBOT_BRAIN)
-    if not brain:
-        return SleeveState(
-            name="driftbot_btc",
-            equity_usd=DRIFTBOT_BASELINE, baseline_usd=DRIFTBOT_BASELINE,
-            pnl_usd=0.0, pnl_pct=0.0, drawdown_pct=0.0,
-            open_positions=0, mode="OFFLINE", cycle=0, health="GOOD",
-            notes=["brain_state.json not found — bot not running or first start"],
-            paper=True,
-        )
-    equity = float(brain.get("equity_usd", DRIFTBOT_BASELINE))
-    pnl_usd = equity - DRIFTBOT_BASELINE
-    pnl_pct = (pnl_usd / DRIFTBOT_BASELINE * 100) if DRIFTBOT_BASELINE > 0 else 0.0
-    dd_pct = -float(brain.get("dd_pct", 0.0)) * 100.0
-    open_positions = 1 if brain.get("has_position") else 0
-    cycle = int(brain.get("cycle", 0))
-    mode = str(brain.get("mode", "NORMAL"))
-    notes = []
-    last_reason = str(brain.get("last_reason", ""))
-    if last_reason:
-        notes.append(f"last: {brain.get('last_action','?')} ({last_reason[:40]})")
-    return SleeveState(
-        name="driftbot_btc", equity_usd=equity, baseline_usd=DRIFTBOT_BASELINE,
-        pnl_usd=pnl_usd, pnl_pct=pnl_pct, drawdown_pct=dd_pct,
-        open_positions=open_positions, mode=mode, cycle=cycle,
-        health=_health(pnl_pct, dd_pct), notes=notes, paper=True,
-    )
+# read_driftbot() REMOVED — driftbot retired/de-wired (D-062, 2026-06-23)
 
 
 def build_portfolio(peak_equity: float = 0.0) -> PortfolioState:
@@ -268,7 +238,7 @@ def build_portfolio(peak_equity: float = 0.0) -> PortfolioState:
         # sfm_tactical REMOVED — retired D-038, de-wired from supervisor (D-038 cleanup)
         "alpaca_stocks": read_alpacabot(),
         "zerobot_btc":   read_zerobot(),
-        "driftbot_btc":  read_driftbot(),  # PAPER (D-035) — excluded from totals below
+        # "driftbot_btc" REMOVED — retired/de-wired (D-062)
     }
 
     # Real-capital totals EXCLUDE paper sleeves so paper P&L never trips real

@@ -120,14 +120,12 @@ def save_pending(decision: dict, portfolio, regime=None) -> None:
             "sfm":     decision.get("sfm",     {}),
             "alpaca":  decision.get("alpaca",  {}),
             "zerobot": decision.get("zerobot", {}),
-            "driftbot": decision.get("driftbot", {}),
         },
         "equity_before": {
             "kraken":  sleeves.get("kraken_crypto").equity_usd if sleeves.get("kraken_crypto") else 0,
             "sfm":     sleeves.get("sfm_tactical").equity_usd  if sleeves.get("sfm_tactical")  else 0,
             "alpaca":  sleeves.get("alpaca_stocks").equity_usd if sleeves.get("alpaca_stocks") else 0,
             "zerobot": sleeves.get("zerobot_btc").equity_usd   if sleeves.get("zerobot_btc")   else 0,
-            "driftbot": sleeves.get("driftbot_btc").equity_usd if sleeves.get("driftbot_btc") else 0,
             "total":   portfolio.total_equity,
         },
         "regime": {
@@ -187,7 +185,6 @@ def evaluate_and_log(portfolio) -> Optional[BrainOutcome]:
         "sfm":     ("sfm_tactical",  "sfm"),
         "alpaca":  ("alpaca_stocks", "alpaca"),
         "zerobot": ("zerobot_btc",   "zerobot"),
-        "driftbot": ("driftbot_btc", "driftbot"),
     }
 
     # ── Scan execution log for fills within the decision window ─────────

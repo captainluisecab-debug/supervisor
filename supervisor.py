@@ -279,7 +279,7 @@ def _run_cycle(cycle: int, peak_equity: float, anomaly_detector: AnomalyDetector
 def main() -> None:
     log.info("=" * 65)
     log.info("MASTER SUPERVISOR v2 — Phase 2: UNIFIED CLAUDE BRAIN")
-    log.info("Total baseline: $%.2f across 3 real sleeves (+1 paper: driftbot — D-035; sfm RETIRED D-038)", TOTAL_BASELINE)
+    log.info("Total baseline: $%.2f across 3 real sleeves (sfm + driftbot RETIRED/de-wired)", TOTAL_BASELINE)
     log.info("Cycle: %ds | Brain: every %d cycles (~%dm)",
              CYCLE_SEC, BRAIN_INTERVAL_CYCLES,
              CYCLE_SEC * BRAIN_INTERVAL_CYCLES // 60)
@@ -289,7 +289,7 @@ def main() -> None:
     log.info("  sfm_tactical   — RETIRED (D-038, de-wired)")
     log.info("  alpaca_stocks  — stable compounder     (alpacabot)")
     log.info("  zerobot_btc    — Donchian-20 BTC       (zerobot, LIVE on Kraken)")
-    log.info("  driftbot_btc   — Donchian-20 BTC       (cryptobot, PAPER — D-035)")
+    log.info("  driftbot_btc   — RETIRED (D-062, de-wired)")
     log.info("=" * 65)
 
     peak_equity = _load_peak()

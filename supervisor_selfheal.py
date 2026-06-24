@@ -298,7 +298,7 @@ def _execute_clear_lock(action: dict, cycle: int):
         "enzobot":  os.path.join(ENZOBOT_DIR,  "enzobot.lock"),
         # sfmbot removed — de-wired (D-038)
         "alpacabot":os.path.join(ALPACA_DIR,   "alpacabot.lock"),
-        "driftbot": r"C:\Projects\cryptobot\engine.lock",  # PAPER (D-035)
+        # driftbot removed — retired/de-wired (D-062)
     }
     path = lock_map.get(bot)
     if not path:
@@ -350,7 +350,7 @@ def _execute_write_supervisor_cmd(action: dict, cycle: int):
         "kraken":  os.path.join(COMMANDS_DIR, "kraken_cmd.json"),
         # sfm removed — de-wired (D-038)
         "alpaca":  os.path.join(COMMANDS_DIR, "alpaca_cmd.json"),
-        "driftbot": os.path.join(COMMANDS_DIR, "driftbot_cmd.json"),  # PAPER (D-035)
+        # driftbot removed — retired/de-wired (D-062)
     }
     path = file_map.get(bot)
     if not path:

@@ -260,8 +260,8 @@ def _read_supervisor_report():
 
 def save_pnl_snapshot(brief):
     """Save current PnL for comparison in the next 12h review.
-    D-051: sourced from canonical supervisor_report.json (4-sleeve; driftbot paper-excluded
-    via total_equity_usd), NOT re-summed from the stale governor brief that dropped zerobot."""
+    D-051: sourced from canonical supervisor_report.json (total_equity_usd; driftbot retired
+    D-062), NOT re-summed from the stale governor brief that dropped zerobot."""
     rep = _read_supervisor_report()
     pf = rep.get("portfolio", {})
     sl = rep.get("sleeves", {})

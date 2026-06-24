@@ -39,7 +39,7 @@ ENZOBOT_BRAIN  = _s("ENZOBOT_BRAIN",  r"C:\Projects\enzobot\brain_state.json")
 SFMBOT_STATE   = _s("SFMBOT_STATE",   r"C:\Projects\sfmbot\solana_state.json")
 ALPACA_STATE   = _s("ALPACA_STATE",   r"C:\Projects\alpacabot\alpaca_state.json")
 ZEROBOT_BRAIN  = _s("ZEROBOT_BRAIN",  r"C:\Projects\zerobot\brain_state.json")
-DRIFTBOT_BRAIN = _s("DRIFTBOT_BRAIN", r"C:\Projects\cryptobot\brain_state.json")  # PAPER (D-035)
+# DRIFTBOT_BRAIN removed — driftbot RETIRED + de-wired (D-062, 2026-06-23)
 
 # Alpaca live account
 ALPACA_API_KEY    = _s("ALPACA_API_KEY")
@@ -50,8 +50,8 @@ ENZOBOT_BASELINE = _f("ENZOBOT_BASELINE", 4000.00)
 SFMBOT_BASELINE  = _f("SFMBOT_BASELINE",  5000.00)  # PAPER sleeve's own DD baseline (D-035 pattern, 2026-06-06)
 ALPACA_BASELINE  = _f("ALPACA_BASELINE",  500.00)
 ZEROBOT_BASELINE = _f("ZEROBOT_BASELINE", 3408.00)
-DRIFTBOT_BASELINE = _f("DRIFTBOT_BASELINE", 3408.00)  # PAPER sleeve's own DD baseline
-# DRIFTBOT and SFMBOT are PAPER ($0 real) — DELIBERATELY EXCLUDED from the real-capital
+# DRIFTBOT_BASELINE removed — driftbot RETIRED (D-062, 2026-06-23)
+# SFMBOT is PAPER ($0 real) — DELIBERATELY EXCLUDED from the real-capital
 # TOTAL_BASELINE so paper P&L never distorts real-money drawdown circuit breakers (D-035).
 # sfm is PAPER as of 2026-06-06 ($5,000 sim validation sleeve) — excluded here.
 # D-052: ENZOBOT_BASELINE dropped from TOTAL_BASELINE — enzobot soft-retired (D-001) and
@@ -80,4 +80,4 @@ CMD_KRAKEN  = os.path.join(COMMANDS_DIR, "kraken_cmd.json")
 CMD_SFM     = os.path.join(COMMANDS_DIR, "sfm_cmd.json")
 CMD_ALPACA  = os.path.join(COMMANDS_DIR, "alpaca_cmd.json")
 CMD_ZEROBOT = os.path.join(COMMANDS_DIR, "zerobot_cmd.json")
-CMD_DRIFTBOT = os.path.join(COMMANDS_DIR, "driftbot_cmd.json")
+# CMD_DRIFTBOT removed — driftbot RETIRED (D-062)
