@@ -50,7 +50,7 @@ EXEC_LOG = os.path.join(BASE_DIR, "execution_log.jsonl")
 # 6. raw run logs = deep forensic source
 
 # Bot-to-sleeve mapping
-_BOT_TO_SLEEVE = {"enzo": "kraken", "sfm": "sfm", "alpaca": "alpaca"}
+_BOT_TO_SLEEVE = {"sfm": "sfm", "alpaca": "alpaca"}  # "enzo":"kraken" REMOVED — enzobot retired (D-063)
 _SLEEVE_CMD_PATHS = {
     "kraken": os.path.join(BASE_DIR, "commands", "kraken_cmd.json"),
     "sfm": os.path.join(BASE_DIR, "commands", "sfm_cmd.json"),
@@ -272,20 +272,11 @@ def _read_kraken() -> dict:
             "regime": truth.get("regime", {}).get("dominant", "?"),
             "pair_regime": truth.get("regime", {}).get("pair_regime", {}),
         }
-    # Fallback to direct reads
-    feedback = _read_json(os.path.join(ENZOBOT_DIR, "supervisor_feedback.json"))
-    brain = _read_json(os.path.join(ENZOBOT_DIR, "brain_state.json"))
+    # enzobot fallback REMOVED — enzobot retired/de-wired (D-063); the truth file (written by the
+    # kraken_account_monitor) is the sole source. If absent, return an empty account view.
     return {
-        "sleeve": "kraken",
-        "equity": feedback.get("portfolio", {}).get("equity", 0),
-        "dd_pct": feedback.get("portfolio", {}).get("dd_pct", 0),
-        "cash": feedback.get("portfolio", {}).get("cash", 0),
-        "open_positions": feedback.get("portfolio", {}).get("open_positions", 0),
-        "brain_mode": brain.get("active_mode", "?"),
-        "effective_posture": "?",
-        "force_flatten": False,
-        "regime": "?",
-        "pair_regime": feedback.get("pair_regime", {}),
+        "sleeve": "kraken", "equity": 0, "dd_pct": 0, "cash": 0, "open_positions": 0,
+        "brain_mode": "?", "effective_posture": "?", "force_flatten": False, "regime": "?", "pair_regime": {},
     }
 
 
@@ -604,12 +595,9 @@ def build_context(regime_label: str, regime_confidence: float) -> dict:
     # Posture outcomes (did the governor's posture produce good results?)
     posture_outcomes = _read_jsonl_tail(os.path.join(BASE_DIR, "governor_posture_outcomes.jsonl"), 10)
 
-    # Kraken exits — learn from every exit (what worked, what didn't)
-    kraken_exits = _read_jsonl_tail(os.path.join(ENZOBOT_DIR, "logs", "exit_counterfactuals.jsonl"), 100)
-    kraken_exit_records = [e for e in kraken_exits if e.get("type") == "exit"]
-
-    # Kraken blocked candidates — learn what entries were rejected and why
-    blocked = _read_jsonl_tail(os.path.join(ENZOBOT_DIR, "logs", "blocked_candidates.jsonl"), 20)
+    # Kraken exit/blocked observability REMOVED — enzobot retired/de-wired (D-063); no live Kraken trader.
+    kraken_exit_records = []
+    blocked = []
 
     # SFM trade state
     sfm_state_full = _read_json(os.path.join(SFMBOT_DIR, "solana_state.json"))

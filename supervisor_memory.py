@@ -122,7 +122,7 @@ def save_pending(decision: dict, portfolio, regime=None) -> None:
             "zerobot": decision.get("zerobot", {}),
         },
         "equity_before": {
-            "kraken":  sleeves.get("kraken_crypto").equity_usd if sleeves.get("kraken_crypto") else 0,
+            # "kraken" REMOVED — enzobot retired/de-wired (D-063)
             "sfm":     sleeves.get("sfm_tactical").equity_usd  if sleeves.get("sfm_tactical")  else 0,
             "alpaca":  sleeves.get("alpaca_stocks").equity_usd if sleeves.get("alpaca_stocks") else 0,
             "zerobot": sleeves.get("zerobot_btc").equity_usd   if sleeves.get("zerobot_btc")   else 0,
@@ -181,7 +181,7 @@ def evaluate_and_log(portfolio) -> Optional[BrainOutcome]:
     regime_at_decision = pending.get("regime")  # dict or None
 
     sleeve_map = {
-        "kraken":  ("kraken_crypto", "kraken"),
+        # "kraken" REMOVED — enzobot retired/de-wired (D-063)
         "sfm":     ("sfm_tactical",  "sfm"),
         "alpaca":  ("alpaca_stocks", "alpaca"),
         "zerobot": ("zerobot_btc",   "zerobot"),

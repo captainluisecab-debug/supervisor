@@ -68,7 +68,7 @@ def gather_universe_context() -> dict:
     hermes = _read_json(os.path.join(BASE_DIR, "hermes_context.json"))
 
     # Outcome analyzers
-    kraken_outcomes = _read_json(os.path.join(ENZOBOT_DIR, "score_adjustments.json"))
+    # kraken_outcomes REMOVED — enzobot retired/de-wired (D-063)
     sfm_outcomes = _read_json(os.path.join(SFMBOT_DIR, "sfm_score_adjustments.json"))
     alpaca_outcomes = _read_json(os.path.join(ALPACABOT_DIR, "alpaca_score_adjustments.json"))
 
@@ -99,20 +99,7 @@ def gather_universe_context() -> dict:
             "btc_7d_pct": regime.get("btc_7d_pct", 0),
             "spy_vol_10d_pct": regime.get("spy_vol_10d_pct", 0),
         },
-        "kraken": {
-            "equity": sleeves.get("kraken_crypto", {}).get("equity_usd", 0),
-            "pnl_pct": sleeves.get("kraken_crypto", {}).get("pnl_pct", 0),
-            "dd_pct": sleeves.get("kraken_crypto", {}).get("drawdown_pct", 0),
-            "mode": sleeves.get("kraken_crypto", {}).get("mode", "?"),
-            "positions": sleeves.get("kraken_crypto", {}).get("open_positions", 0),
-            "outcome_summary": {
-                "total_trades": kraken_outcomes.get("trading_exits", 0),
-                "win_rate": kraken_outcomes.get("overall_win_rate", 0),
-                "total_pnl": kraken_outcomes.get("total_pnl", 0),
-                "pair_adjustments": kraken_outcomes.get("pair_adjustments", {}),
-                "recommended_min_score": kraken_outcomes.get("recommended_min_score", 0),
-            },
-        },
+        # "kraken" sleeve context REMOVED — enzobot retired/de-wired (D-063); no kraken trading sleeve
         "sfm": {
             "equity": sleeves.get("sfm_tactical", {}).get("equity_usd", 0),
             "pnl_pct": sleeves.get("sfm_tactical", {}).get("pnl_pct", 0),
@@ -175,8 +162,7 @@ PORTFOLIO STATE:
 MARKET REGIME:
 {json.dumps(context['regime'], indent=2)}
 
-KRAKEN SLEEVE (crypto — {context['kraken']['positions']} positions, equity ${context['kraken']['equity']:.2f}):
-{json.dumps(context['kraken'], indent=2)}
+(Kraken trading sleeve RETIRED — enzobot de-wired D-063; Kraken account is now a regime monitor only.)
 
 SFM SLEEVE (Solana token — {context['sfm']['positions']} positions, equity ${context['sfm']['equity']:.2f}):
 {json.dumps(context['sfm'], indent=2)}

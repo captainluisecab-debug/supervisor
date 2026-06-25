@@ -84,7 +84,7 @@ def _autonomy_pnl_readers() -> dict:
     """Map bot_name -> callable returning realized_pnl_usd. Used by
     autonomy_guard to backfill tuning_outcomes.jsonl with t+6h / t+24h deltas."""
     return {
-        "kraken":     lambda: _read_realized_pnl(r"C:\Projects\enzobot\state.json"),
+        # "kraken" reader REMOVED — enzobot retired/de-wired (D-063)
         "alpaca":     lambda: _read_realized_pnl(r"C:\Projects\alpacabot\alpaca_state.json"),
         # sfm removed — retired/de-wired (D-038)
     }
@@ -285,7 +285,7 @@ def main() -> None:
              CYCLE_SEC * BRAIN_INTERVAL_CYCLES // 60)
     log.info("=" * 65)
     log.info("Sleeves:")
-    log.info("  kraken_crypto  — core growth engine    (enzobot, soft-retired per D-001)")
+    log.info("  kraken_crypto  — RETIRED (D-063, enzobot de-wired; Kraken acct now regime monitor)")
     log.info("  sfm_tactical   — RETIRED (D-038, de-wired)")
     log.info("  alpaca_stocks  — stable compounder     (alpacabot)")
     log.info("  zerobot_btc    — Donchian-20 BTC       (zerobot, LIVE on Kraken)")

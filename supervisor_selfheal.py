@@ -8,7 +8,7 @@ When anomalies are detected, this module:
 4. Logs every action to selfheal_log.jsonl for audit trail
 
 Opus can prescribe:
-  - adjust_policy_json  : change a value in enzobot/policy.json
+  - adjust_policy_json  : change a value in a bot's policy.json
   - adjust_env          : change an env var in a bot's .env file
   - clear_lock          : delete a stale lock file
   - write_supervisor_cmd: push a mode command to a bot
@@ -104,7 +104,7 @@ AVAILABLE ACTIONS
 You may prescribe any combination of these actions:
 
 1. adjust_policy_json
-   Modify a value in enzobot/policy.json.
+   Modify a value in a bot's policy.json.
    Safe keys: attack_rules.max_dd_pct (2.0-8.0), attack_rules.max_daily_loss_pct (1.0-5.0),
               defend_rules.dd_pct_trigger (4.0-12.0)
    Example: {{"type":"adjust_policy_json","key":"attack_rules.max_dd_pct","value":5.5,"reason":"..."}}
@@ -112,21 +112,21 @@ You may prescribe any combination of these actions:
 2. adjust_env
    Modify an environment variable in a bot's .env file. Requires bot restart.
    Safe keys: ADX_MIN_ENTRY (8-20), MIN_SCORE_TO_TRADE (48-70), SCORE_DROP_EXIT (4-15)
-   Example: {{"type":"adjust_env","bot":"enzobot","key":"ADX_MIN_ENTRY","value":"12","reason":"..."}}
+   Example: {{"type":"adjust_env","bot":"alpacabot","key":"ADX_MIN_ENTRY","value":"12","reason":"..."}}
 
 3. clear_lock
    Delete a stale lock file so a crashed bot can restart.
-   Example: {{"type":"clear_lock","bot":"enzobot","reason":"..."}}
+   Example: {{"type":"clear_lock","bot":"alpacabot","reason":"..."}}
 
 4. write_supervisor_cmd
    Push a mode command to a bot (overrides current mode for 1 brain cycle).
    Modes: NORMAL, SCOUT, DEFENSE. size_mult: 0.3-1.3.
-   Example: {{"type":"write_supervisor_cmd","bot":"kraken","mode":"NORMAL","size_mult":0.8,"entry_allowed":true,"reason":"..."}}
+   Example: {{"type":"write_supervisor_cmd","bot":"alpaca","mode":"NORMAL","size_mult":0.8,"entry_allowed":true,"reason":"..."}}
 
 5. restart_bot
    Signal a bot to restart cleanly (writes a restart flag file).
    Use only if cycle is frozen or lock is stale and already cleared.
-   Example: {{"type":"restart_bot","bot":"enzobot","reason":"..."}}
+   Example: {{"type":"restart_bot","bot":"alpacabot","reason":"..."}}
 
 6. alert_human
    Escalate an issue that cannot be auto-fixed. Always include clear description.
@@ -235,7 +235,7 @@ def _execute_adjust_env(action: dict, cycle: int):
         return
     _ENV_ACTION_COUNT["count"] += 1
 
-    bot    = action.get("bot", "enzobot")
+    bot    = action.get("bot", "alpaca")
     key    = action.get("key", "")
     value  = str(action.get("value", ""))
     reason = action.get("reason", "")
@@ -254,8 +254,8 @@ def _execute_adjust_env(action: dict, cycle: int):
     except Exception:
         pass
 
-    bot_dirs = {"enzobot": ENZOBOT_DIR, "alpacabot": ALPACA_DIR}  # sfmbot removed — de-wired (D-038)
-    env_path = os.path.join(bot_dirs.get(bot, ENZOBOT_DIR), ".env")
+    bot_dirs = {"alpacabot": ALPACA_DIR}  # enzobot REMOVED — retired/de-wired (D-063); sfmbot — D-038
+    env_path = os.path.join(bot_dirs.get(bot, ALPACA_DIR), ".env")
 
     try:
         with open(env_path, encoding="utf-8") as f:
@@ -291,12 +291,11 @@ def _execute_adjust_env(action: dict, cycle: int):
 
 
 def _execute_clear_lock(action: dict, cycle: int):
-    bot    = action.get("bot", "enzobot")
+    bot    = action.get("bot", "alpaca")
     reason = action.get("reason", "")
 
     lock_map = {
-        "enzobot":  os.path.join(ENZOBOT_DIR,  "enzobot.lock"),
-        # sfmbot removed — de-wired (D-038)
+        # enzobot REMOVED — retired/de-wired (D-063); sfmbot — D-038
         "alpacabot":os.path.join(ALPACA_DIR,   "alpacabot.lock"),
         # driftbot removed — retired/de-wired (D-062)
     }
@@ -334,9 +333,9 @@ def _execute_write_supervisor_cmd(action: dict, cycle: int):
         return
     _CMD_ACTION_COUNT["count"] += 1
 
-    # Normalize bot name — Opus may return "enzobot"/"sfmbot"/"alpacabot"
-    _bot_alias = {"enzobot": "kraken", "alpacabot": "alpaca"}  # sfmbot removed — de-wired (D-038)
-    bot    = _bot_alias.get(action.get("bot", "kraken"), action.get("bot", "kraken"))
+    # Normalize bot name — Opus may return "alpacabot"
+    _bot_alias = {"alpacabot": "alpaca"}  # "enzobot":"kraken" REMOVED — enzobot retired (D-063); sfm — D-038
+    bot    = _bot_alias.get(action.get("bot", "alpaca"), action.get("bot", "alpaca"))
     mode   = action.get("mode", "SCOUT")
     size   = float(action.get("size_mult", 0.5))
     entry  = bool(action.get("entry_allowed", True))
@@ -347,8 +346,7 @@ def _execute_write_supervisor_cmd(action: dict, cycle: int):
     size = max(0.3, min(1.3, size))
 
     file_map = {
-        "kraken":  os.path.join(COMMANDS_DIR, "kraken_cmd.json"),
-        # sfm removed — de-wired (D-038)
+        # "kraken" REMOVED — enzobot retired/de-wired (D-063); would resurrect the archived kraken_cmd. sfm — D-038
         "alpaca":  os.path.join(COMMANDS_DIR, "alpaca_cmd.json"),
         # driftbot removed — retired/de-wired (D-062)
     }
@@ -382,7 +380,7 @@ def _execute_write_supervisor_cmd(action: dict, cycle: int):
 _RESTART_ACTION_COUNT = {"count": 0, "day": ""}
 
 def _execute_restart_bot(action: dict, cycle: int):
-    bot    = action.get("bot", "enzobot")
+    bot    = action.get("bot", "alpaca")
     reason = action.get("reason", "selfheal")
 
     today = time.strftime("%Y-%m-%d")
@@ -397,8 +395,8 @@ def _execute_restart_bot(action: dict, cycle: int):
         return
     _RESTART_ACTION_COUNT["count"] += 1
 
-    bot_dirs = {"enzobot": ENZOBOT_DIR, "alpacabot": ALPACA_DIR}  # sfmbot removed — de-wired (D-038)
-    bot_dir  = bot_dirs.get(bot, ENZOBOT_DIR)
+    bot_dirs = {"alpacabot": ALPACA_DIR}  # enzobot REMOVED — retired/de-wired (D-063); sfmbot — D-038
+    bot_dir  = bot_dirs.get(bot, ALPACA_DIR)
     flag     = os.path.join(bot_dir, "RESTART_REQUESTED.flag")
 
     try:

@@ -270,11 +270,10 @@ def save_pnl_snapshot(brief):
         "ts": datetime.now(timezone.utc).isoformat(),
         "universe_equity": float(pf.get("total_equity_usd", 0) or 0),
         "universe_baseline": float(pf.get("total_baseline_usd", 0) or 0),
-        "kraken_equity": _eq("kraken_crypto"),
+        # kraken_equity / kraken_dd REMOVED — enzobot retired/de-wired (D-063)
         "zerobot_equity": _eq("zerobot_btc"),
         "alpaca_equity": _eq("alpaca_stocks"),
         "sfm_equity": 0,  # retired (D-038)
-        "kraken_dd": float(sl.get("kraken_crypto", {}).get("drawdown_pct", 0) or 0),
     }
     try:
         with open(PNL_SNAPSHOT, "w", encoding="utf-8") as f:
@@ -297,7 +296,7 @@ def _get_recent_commits():
     """Get last 5 git commits across all repos for context."""
     commits = []
     for repo, name in [
-        (r"C:\Projects\enzobot", "enzobot"),
+        # (enzobot REMOVED — retired/de-wired D-063); (sfmbot — D-038)
         (r"C:\Projects\sfmbot", "sfmbot"),
         (r"C:\Projects\alpacabot", "alpacabot"),
         (r"C:\Projects\supervisor", "supervisor"),
