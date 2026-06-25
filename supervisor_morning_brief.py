@@ -204,40 +204,9 @@ def generate_brief(portfolio, regime, allocations, recent_outcomes,
                 lines.append(f"    Note: {note}")
         lines.append("")
 
-    # ── USDG Yield (Kraken+ 4.25% APR) ──────────────────────────────────
-    lines.append(_bar("USDG YIELD  (Kraken+ 4.25% APR)"))
-    try:
-        _enzo_state_path = os.path.join(
-            os.path.dirname(os.path.abspath(__file__)),
-            r"..\enzobot\state.json",
-        )
-        with open(_enzo_state_path, encoding="utf-8") as _sf:
-            _enzo_cash = float(json.load(_sf).get("cash", 0.0))
-        _usdg_apr      = 0.0425
-        _daily_yield   = _enzo_cash * _usdg_apr / 365
-        _monthly_yield = _daily_yield * 30
-        _annual_yield  = _enzo_cash * _usdg_apr
-        lines += [
-            f"  Cash earning yield: ${_enzo_cash:,.2f}",
-            f"  Daily yield:        ${_daily_yield:,.2f}",
-            f"  Monthly yield:      ${_monthly_yield:,.2f}",
-            f"  Annual yield:       ${_annual_yield:,.2f}",
-            f"  Note: Allocate idle Kraken cash to USDG to activate yield",
-        ]
-    except Exception as _yield_exc:
-        lines.append(f"  [Yield data unavailable: {_yield_exc}]")
-    lines.append("")
-
-    # ── Kraken+ Free Tier ────────────────────────────────────────────────
-    lines.append(_bar("KRAKEN+ FREE TIER  (fee-free allowance)"))
-    try:
-        import sys
-        sys.path.insert(0, r"C:\Projects\enzobot")
-        from kraken_free_tier import format_for_brief
-        lines.append(format_for_brief())
-    except Exception as _free_tier_exc:
-        lines.append(f"  [Free tier data unavailable: {_free_tier_exc}]")
-    lines.append("")
+    # USDG Yield + Kraken+ Free Tier sections REMOVED — enzobot retired/de-wired (D-063).
+    # (They read ..\enzobot\state.json and imported kraken_free_tier from C:\Projects\enzobot —
+    # both gone after archive; the sections were enzobot-account specific.)
 
     # ── Economic Calendar ────────────────────────────────────────────────
     if calendar:

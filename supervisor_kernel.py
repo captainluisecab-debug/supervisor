@@ -39,22 +39,21 @@ KRAKEN_TRUTH_FILE = os.path.join(BASE_DIR, "kraken_state_truth.json")
 
 # Import constants and paths from Governor (single source of truth)
 from supervisor_governor import (
-    CMD_KRAKEN, CMD_ALPACA, CMD_ZEROBOT,  # CMD_SFM (D-038) + CMD_DRIFTBOT (D-062) dropped — de-wired
+    CMD_ALPACA, CMD_ZEROBOT,  # CMD_KRAKEN dropped — enzobot retired (D-063); CMD_SFM (D-038), CMD_DRIFTBOT (D-062)
     REGIME_BEHAVIOR, DEFAULT_BEHAVIOR,
-    EXPECTANCY_FREEZE_THRESHOLD,
-    ENZOBOT_DIR, ALPACA_DIR,
-    compute_rolling_expectancy,
+    ALPACA_DIR,
     classify_dominant_regime,
+    # ENZOBOT_DIR, EXPECTANCY_FREEZE_THRESHOLD, compute_rolling_expectancy dropped — INV-4 removed (D-063)
 )
 
-EXIT_LOG = os.path.join(ENZOBOT_DIR, "logs", "exit_counterfactuals.jsonl")
+# EXIT_LOG removed — INV-4 (Kraken expectancy) removed with enzobot (D-063)
 
 SLEEVE_CMD_MAP = {
-    "kraken":  CMD_KRAKEN,
-    # "sfm" REMOVED — retired/de-wired D-038 (lockstep with governor: no sfm_cmd written -> INV-5 clean)
+    # "kraken" REMOVED — enzobot retired/de-wired D-063 (lockstep with governor: no kraken_cmd written)
+    # "sfm" REMOVED — retired/de-wired D-038
     "alpaca":  CMD_ALPACA,
     "zerobot": CMD_ZEROBOT,
-    # "driftbot" REMOVED — retired/de-wired D-062 (lockstep with governor: no driftbot_cmd written -> INV-5 clean)
+    # "driftbot" REMOVED — retired/de-wired D-062
 }
 
 # INV-3 (regime behavior) skip-list. ZeroBot has its OWN SMA-50 macro filter
@@ -142,7 +141,8 @@ def _check_regime_behavior_respected() -> List[str]:
     alpaca_dominant = classify_dominant_regime(alpaca_pair_regime) if alpaca_pair_regime else "RANGING"
 
     sleeve_regimes = {
-        "kraken":  crypto_dominant,
+        # "kraken" REMOVED — enzobot retired/de-wired D-063 (no kraken trading sleeve; the account
+        #   regime is still written to kraken_state_truth.json for zerobot's check below)
         # "sfm" REMOVED — de-wired D-038
         "alpaca":  alpaca_dominant,
         "zerobot": crypto_dominant,  # listed for completeness; skipped via INV3_SKIP_SLEEVES below
@@ -166,21 +166,9 @@ def _check_regime_behavior_respected() -> List[str]:
     return violations
 
 
-def _check_expectancy_freeze_respected() -> List[str]:
-    """INV-4: If Kraken expectancy < threshold, entries must be blocked."""
-    violations = []
-    exits = _read_jsonl_tail(EXIT_LOG, 40)
-    if not exits:
-        return []
-    expectancy = compute_rolling_expectancy(exits, n=20)
-    if expectancy < EXPECTANCY_FREEZE_THRESHOLD:
-        cmd = _read_json(CMD_KRAKEN)
-        if cmd.get("entry_allowed") is True:
-            violations.append(
-                f"INV-4: expectancy={expectancy:.2f} < {EXPECTANCY_FREEZE_THRESHOLD} "
-                f"but kraken_cmd has entry_allowed=true"
-            )
-    return violations
+# INV-4 (_check_expectancy_freeze_respected) REMOVED — enzobot retired/de-wired (D-063): it froze the
+# Kraken trader's entries on poor expectancy, but there is no live Kraken trader anymore. The kernel now
+# runs 4 hard invariants (INV-1/2/3/5) + INV-6 (advisory, log-only). Proven by _kernel_invariant_harness.py.
 
 
 def _check_lane_integrity() -> List[str]:
@@ -254,14 +242,13 @@ def run_kernel(cycle: int) -> KernelResult:
         log.warning("[KERNEL] BYPASS active — returning PASS unconditionally")
         return KernelResult(status="PASS", checked_at=now, duration_ms=0)
 
-    # Run all six invariant checks
+    # Run the invariant checks (INV-4 Kraken-expectancy REMOVED with enzobot, D-063)
     violations = []
-    violations.extend(_check_force_flatten_consistency())
-    violations.extend(_check_dd_override_respected())
-    violations.extend(_check_regime_behavior_respected())
-    violations.extend(_check_expectancy_freeze_respected())
-    violations.extend(_check_lane_integrity())
-    violations.extend(_check_strategic_directive_freshness())  # INV-6 Option A: log-only
+    violations.extend(_check_force_flatten_consistency())      # INV-1
+    violations.extend(_check_dd_override_respected())          # INV-2
+    violations.extend(_check_regime_behavior_respected())      # INV-3
+    violations.extend(_check_lane_integrity())                 # INV-5
+    violations.extend(_check_strategic_directive_freshness())  # INV-6 Option A: log-only (advisory)
 
     duration_ms = int((time.monotonic() - t0) * 1000)
     status = "HALT" if violations else "PASS"
@@ -275,7 +262,7 @@ def run_kernel(cycle: int) -> KernelResult:
 
     # Log
     if status == "PASS":
-        log.info("[KERNEL] PASS - 6/6 invariants clean (cycle %d)", cycle)
+        log.info("[KERNEL] PASS - 5/5 invariants clean [4 hard + INV-6 advisory] (cycle %d)", cycle)
     else:
         log.warning("[KERNEL] HALT - %d violation(s) detected (cycle %d)",
                      len(violations), cycle)

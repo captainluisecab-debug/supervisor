@@ -286,56 +286,9 @@ _REGIME_THRESH_MAX = 14400  # 4 hour ceiling
 _REGIME_THRESH_STEP = 900   # 15 min adjustment per feedback cycle
 
 
-def _adjust_regime_threshold():
-    """Adjust the Kraken regime duration threshold based on posture outcomes.
-    If recent TRADE outcomes were WRONG, tighten (require longer regime stability).
-    If recent TRADE outcomes were CORRECT, loosen (allow shorter regime stability).
-    Bounded between 30 min and 4 hours."""
-    try:
-        if not os.path.exists(POSTURE_OUTCOMES_FILE):
-            return
-        with open(POSTURE_OUTCOMES_FILE, encoding="utf-8") as f:
-            outcomes = [json.loads(l.strip()) for l in f.readlines()[-10:] if l.strip()]
-        trade_outcomes = [o for o in outcomes if o.get("posture") in ("TRADE_ACTIVE", "TRADE")]
-        if len(trade_outcomes) < 3:
-            return  # not enough data to adjust
+# _adjust_regime_threshold() REMOVED — enzobot retired/de-wired (D-063). Tuned the Kraken regime
+# duration via kraken_cmd writes from posture-outcome feedback. 0 callers.
 
-        recent_5 = trade_outcomes[-5:]
-        wrong_count = sum(1 for o in recent_5 if o.get("verdict") == "WRONG")
-        correct_count = sum(1 for o in recent_5 if o.get("verdict") == "CORRECT")
-
-        # Read current threshold from enzobot engine config
-        # We can't write to .env directly, but we can write an advisory that the
-        # 12h Opus review or operator can act on
-        # Read current threshold
-        current_cmd = _read_json(CMD_KRAKEN)
-        current_thresh = current_cmd.get("regime_min_stable_sec", 3600)
-
-        new_thresh = current_thresh
-        if wrong_count >= 3 and current_thresh < _REGIME_THRESH_MAX:
-            new_thresh = min(current_thresh + _REGIME_THRESH_STEP, _REGIME_THRESH_MAX)
-            log.info("[FEEDBACK] %d/5 TRADE outcomes WRONG — regime threshold %ds -> %ds",
-                     wrong_count, current_thresh, new_thresh)
-        elif correct_count >= 3 and current_thresh > _REGIME_THRESH_MIN:
-            new_thresh = max(current_thresh - _REGIME_THRESH_STEP, _REGIME_THRESH_MIN)
-            log.info("[FEEDBACK] %d/5 TRADE outcomes CORRECT — regime threshold %ds -> %ds",
-                     correct_count, current_thresh, new_thresh)
-
-        if new_thresh != current_thresh:
-            # Write updated threshold to command file — engine reads it next cycle
-            current_cmd["regime_min_stable_sec"] = new_thresh
-            try:
-                tmp = CMD_KRAKEN + ".tmp"
-                with open(tmp, "w", encoding="utf-8") as f:
-                    json.dump(current_cmd, f, indent=2)
-                os.replace(tmp, CMD_KRAKEN)
-            except Exception:
-                pass
-    except Exception as exc:
-        log.debug("[FEEDBACK] Threshold adjustment error: %s", exc)
-
-
-# ── Data readers ──────────────────────────────────────────────────────
 
 def _parse_ts(ts_str: str) -> float:
     try:
@@ -377,38 +330,16 @@ def _read_jsonl_tail(path: str, n: int = 50) -> List[dict]:
 
 
 def _read_enzobot_state() -> dict:
-    """D-063 Phase A (SHADOW): the governor STILL runs on enzobot; the new kraken_account_monitor is
-    read in SHADOW each cycle and logged for comparison ([D063-BAKE-SHADOW]). After the bake confirms
-    the monitor matches enzobot (regime + equity), Phase B flips the return to the monitor and removes
-    the enzobot read. NO behavior change to the live governor during the bake."""
-    feedback = _read_json(os.path.join(ENZOBOT_DIR, "supervisor_feedback.json"))
-    state = _read_json(os.path.join(ENZOBOT_DIR, "state.json"))
-    brain = _read_json(os.path.join(ENZOBOT_DIR, "brain_state.json"))
-    enzo = {
-        "sleeve": "kraken",
-        "equity": feedback.get("portfolio", {}).get("equity", 0),
-        "dd_pct": feedback.get("portfolio", {}).get("dd_pct", 0),
-        "cash": feedback.get("portfolio", {}).get("cash", 0),
-        "open_positions": feedback.get("portfolio", {}).get("open_positions", 0),
-        "portfolio": feedback.get("portfolio", {}),
-        "pair_regime": feedback.get("pair_regime", {}),
-        "pair_scores": feedback.get("pair_scores", {}),
-        "mode": brain.get("active_mode", "UNKNOWN"),
-    }
-    # D-063 Phase-A CUTOVER: the governor now runs on the MONITOR (enzobot-independent). enzobot is kept
-    # as a comparison reference + fallback ONLY until Phase B removes it. The comparison log stays so any
-    # divergence is visible; Phase B deletes the enzobot read + this whole block.
+    """D-063: Kraken ACCOUNT + crypto regime, sourced from kraken_account_monitor (enzobot fully
+    retired/de-wired). Returns the monitor's dict (live Kraken equity + BTC pair_regime). Function
+    name kept for call-site stability; this is the Kraken account monitor, no longer a trading sleeve."""
     try:
         from kraken_account_monitor import read_kraken_account
-        mon = read_kraken_account()
-        mr = (mon.get("pair_regime") or {}).get("BTC/USD")
-        er = (enzo.get("pair_regime") or {}).get("BTC/USD")
-        log.info("[D063-BAKE] LIVE-ON-MONITOR regime=%s equity=%.2f | enzobot(ref) regime=%s equity=%.2f | match=%s",
-                 mr, mon.get("equity") or 0.0, er, enzo.get("equity") or 0.0, mr == er)
-        return mon
+        return read_kraken_account()
     except Exception as e:
-        log.warning("[D063-BAKE] monitor read FAILED — FALLBACK to enzobot this cycle: %s", e)
-        return enzo
+        log.warning("[KRAKEN-MONITOR] read failed (%s) — empty (regime falls back to RANGING)", e)
+        return {"sleeve": "kraken", "equity": 0, "dd_pct": 0, "cash": 0, "open_positions": 0,
+                "portfolio": {}, "pair_regime": {}, "pair_scores": {}, "mode": "MONITOR"}
 
 
 def _read_sfm_state() -> dict:
@@ -753,249 +684,8 @@ def _log_decision(decision: GovernorDecision) -> None:
         log.error("[GOVERNOR] Failed to log decision: %s", exc)
 
 
-def evaluate_kraken(enzo_state: dict, exits: List[dict], cycle: int,
-                    hermes_advisory: dict = None) -> List[GovernorDecision]:
-    """Evaluate Kraken sleeve using regime behavior matrix + metrics."""
-    decisions = []
-    now_iso = datetime.now(timezone.utc).isoformat()
-    equity = enzo_state.get("equity", 0)
-    dd = enzo_state.get("dd_pct", 0)
-    pair_regime = enzo_state.get("pair_regime", {})
-
-    # ── Operator soft-retire short-circuit ────────────────────────────
-    # If commands/kraken_retire.flag exists, enzobot is retired per
-    # operator decision 2026-05-16 (Period C closure). Always emit
-    # DEFENSE / size=0 / entry_allowed=False. force_flatten=False:
-    # do NOT force-close existing positions; let them exit on their own
-    # rules. Bot is currently flat. Reversal: delete the flag file.
-    _retire_flag = os.path.join(BASE_DIR, "commands", "kraken_retire.flag")
-    if os.path.exists(_retire_flag):
-        decisions.append(GovernorDecision(
-            ts=now_iso, cycle=cycle, action="SOFT_RETIRE", sleeve="kraken",
-            reason="Operator soft-retire active (kraken_retire.flag present) — entries permanently blocked",
-            shadow=SHADOW_MODE, metrics={"equity": round(equity, 2), "dd_pct": round(dd, 2),
-                                          "open_positions": enzo_state.get("open_positions", 0)},
-            classification="BLOCK",
-        ))
-        _write_command_file(CMD_KRAKEN, "DEFENSE", 0.0, False,
-                            "Governor: enzobot soft-retired (operator 2026-05-16)",
-                            "kraken", force_flatten=False)
-        return decisions
-
-    # Classify dominant regime
-    dominant = classify_dominant_regime(pair_regime)
-    behavior = get_regime_behavior(dominant)
-    regime_mode = behavior["mode"]  # TRADE / REDUCE / FLAT
-
-    # Track regime history. On regime change, force a fresh cmd write so the
-    # bot is always guided by current-regime behavior, not last-decision regime.
-    _regime_changed = False
-    if not _regime_history or _regime_history[-1][1] != dominant:
-        _regime_changed = (len(_regime_history) > 0)  # don't trigger on first cycle
-        _regime_history.append((time.time(), dominant))
-    if _regime_changed:
-        _new_mode = "NORMAL" if behavior.get("mode") == "TRADE" else \
-                    "SCOUT" if behavior.get("mode") == "SCOUT" else "DEFENSE"
-        _new_size = float(behavior.get("size_mult", 0.3))
-        _new_entry = bool(behavior.get("entries_allowed", False))
-        _write_command_file(
-            CMD_KRAKEN, _new_mode, _new_size, _new_entry,
-            f"Regime changed to {dominant} — refreshing cmd to match new behavior",
-            "kraken",
-            force_flatten=(behavior.get("mode") == "FLAT"),
-        )
-        log.info("[GOVERNOR] Regime changed to %s — wrote fresh cmd: mode=%s size=%.1fx entry=%s",
-                 dominant, _new_mode, _new_size, _new_entry)
-
-    # ── Trend phase: cautious (0-6h) vs proven (6h+) ───────────────
-    # Early trends are unproven and frequently reverse. Reduce exposure
-    # until the trend has survived CAUTIOUS_PHASE_HOURS.
-    _regime_age_sec = time.time() - _regime_history[-1][0] if _regime_history else 0
-    _regime_age_hours = _regime_age_sec / 3600
-    _cautious_phase_hours = _get_cautious_phase_hours()
-    _trend_phase = "early" if _regime_age_hours < _cautious_phase_hours else "proven"
-
-    # Track equity for DD rate
-    _equity_history.append((time.time(), equity))
-    cutoff = time.time() - 7200
-    while _equity_history and _equity_history[0][0] < cutoff:
-        _equity_history.pop(0)
-
-    # Compute metrics
-    expectancy = compute_rolling_expectancy(exits)
-    dd_rate = compute_dd_rate(_equity_history)
-    exits_last_hour = count_exits_last_hour(exits)
-    hours_since_win = time_since_last_win(exits)
-    cash = enzo_state.get("cash", 0)
-    deploy_pct = compute_deployment_pct(cash, equity)
-    open_pos = enzo_state.get("open_positions", 0)
-
-    metrics = {
-        "dominant_regime": dominant,
-        "regime_mode": regime_mode,
-        "expectancy_20": round(expectancy, 2),
-        "dd_rate_pct_hour": round(dd_rate, 3),
-        "exits_last_hour": exits_last_hour,
-        "hours_since_win": round(hours_since_win, 1),
-        "deploy_pct": round(deploy_pct, 1),
-        "dd_pct": round(dd, 2),
-        "equity": round(equity, 2),
-        "open_positions": open_pos,
-        "brain_mode": enzo_state.get("mode", "?"),
-    }
-
-    # ── Regime-driven decisions ───────────────────────────────────────
-    if regime_mode == "FLAT":
-        # TRENDING_DOWN: go to cash. Close positions near breakeven.
-        decisions.append(GovernorDecision(
-            ts=now_iso, cycle=cycle, action="FORCE_FLAT", sleeve="kraken",
-            reason=f"Regime={dominant} -> FLAT mode. No entries. Reduce all positions toward cash.",
-            shadow=SHADOW_MODE, metrics=metrics,
-        ))
-        # Write DEFENSE command with force_flatten=True — close all positions
-        _write_command_file(CMD_KRAKEN, "DEFENSE", 0.0, False,
-                            f"Governor FLAT: {dominant}", "kraken", force_flatten=True)
-
-    elif regime_mode == "REDUCE":
-        # RANGING/VOLATILE: no new entries, actively reduce exposure
-        decisions.append(GovernorDecision(
-            ts=now_iso, cycle=cycle, action="REDUCE_EXPOSURE", sleeve="kraken",
-            reason=f"Regime={dominant} -> REDUCE mode. No entries. Tighten exits on held positions.",
-            shadow=SHADOW_MODE, metrics=metrics,
-        ))
-        _write_command_file(CMD_KRAKEN, "SCOUT", 0.0, False,
-                            f"Governor REDUCE: {dominant}", "kraken")
-
-    elif regime_mode == "TRADE":
-        # TRENDING_UP: allow entries — phase-adjusted sizing
-        if _trend_phase == "early":
-            _phase_size = round(behavior["size_mult"] * 0.5, 2)
-            _phase_max_pos = 2
-            _phase_label = f"TRADE (CAUTIOUS — trend {_regime_age_hours:.1f}h < {_cautious_phase_hours}h)"
-        else:
-            _phase_size = behavior["size_mult"]
-            _phase_max_pos = 5
-            _phase_label = f"TRADE (PROVEN — trend {_regime_age_hours:.1f}h)"
-        decisions.append(GovernorDecision(
-            ts=now_iso, cycle=cycle, action="TRADE_ACTIVE", sleeve="kraken",
-            reason=f"Regime={dominant} -> {_phase_label}. Entries allowed.",
-            shadow=SHADOW_MODE, metrics=metrics,
-        ))
-        _write_command_file(CMD_KRAKEN, "NORMAL", _phase_size, True,
-                            f"Governor {_phase_label}: {dominant}", "kraken",
-                            trend_phase=_trend_phase,
-                            trend_phase_hours=_regime_age_hours,
-                            max_positions=_phase_max_pos)
-
-    elif regime_mode == "SCOUT":
-        # RANGING with SCOUT OFFENSE: reduced-size entries — phase-adjusted
-        if _trend_phase == "early":
-            _phase_size = round(behavior["size_mult"] * 0.5, 2)
-            _phase_max_pos = 2
-            _phase_label = f"SCOUT (CAUTIOUS — trend {_regime_age_hours:.1f}h < {_cautious_phase_hours}h)"
-        else:
-            _phase_size = behavior["size_mult"]
-            _phase_max_pos = 3
-            _phase_label = f"SCOUT (PROVEN — trend {_regime_age_hours:.1f}h)"
-        decisions.append(GovernorDecision(
-            ts=now_iso, cycle=cycle, action="SCOUT_ACTIVE", sleeve="kraken",
-            reason=f"Regime={dominant} -> {_phase_label}. Reduced-size entries allowed.",
-            shadow=SHADOW_MODE, metrics=metrics,
-        ))
-        _write_command_file(CMD_KRAKEN, "SCOUT", _phase_size, True,
-                            f"Governor {_phase_label}: {dominant}", "kraken",
-                            trend_phase=_trend_phase,
-                            trend_phase_hours=_regime_age_hours,
-                            max_positions=_phase_max_pos)
-
-    # ── Pair-level scout exception (paper mode learning) ──────────────
-    # ── Metric-driven overrides (tighten-only, override regime if worse) ──
-    if expectancy < EXPECTANCY_FREEZE_THRESHOLD:
-        decisions.append(GovernorDecision(
-            ts=now_iso, cycle=cycle, action="FREEZE_ENTRIES", sleeve="kraken",
-            reason=f"Expectancy={expectancy:.2f} < {EXPECTANCY_FREEZE_THRESHOLD} — overrides regime",
-            shadow=SHADOW_MODE, metrics=metrics,
-        ))
-        # Expectancy override: freeze entries, preserve force_flatten from regime decision
-        _exp_flatten = (regime_mode == "FLAT")
-        _write_command_file(CMD_KRAKEN, "DEFENSE", 0.0, False,
-                            f"Governor: negative expectancy override", "kraken",
-                            force_flatten=_exp_flatten)
-
-    # Hermes DD advisory override (tighten-only): if Hermes says no entries, block entries
-    _hermes_entry = (hermes_advisory or {}).get("kraken", {}).get("entry_allowed", True)
-    if not _hermes_entry:
-        decisions.append(GovernorDecision(
-            ts=now_iso, cycle=cycle, action="HERMES_DD_OVERRIDE", sleeve="kraken",
-            reason=f"Hermes advisory: entry_allowed=false (DD={dd:.1f}%) — tighten-only override",
-            shadow=SHADOW_MODE, metrics=metrics,
-        ))
-        _write_command_file(CMD_KRAKEN, "DEFENSE", 0.0, False,
-                            f"Governor: Hermes DD override (DD={dd:.1f}%)", "kraken",
-                            force_flatten=(regime_mode == "FLAT"))
-        log.info("[GOVERNOR] Hermes DD override: entry_allowed=false (DD=%.1f%%)", dd)
-
-    if dd_rate < -DD_ACCEL_THRESHOLD_PER_HOUR:
-        decisions.append(GovernorDecision(
-            ts=now_iso, cycle=cycle, action="FORCE_DEFENSE", sleeve="kraken",
-            reason=f"DD accelerating at {dd_rate:.2f}%/hour",
-            shadow=SHADOW_MODE, metrics=metrics,
-        ))
-
-    if exits_last_hour > CHURN_EXIT_LIMIT_PER_HOUR:
-        decisions.append(GovernorDecision(
-            ts=now_iso, cycle=cycle, action="EXTEND_COOLDOWN", sleeve="kraken",
-            reason=f"{exits_last_hour} exits in last hour > {CHURN_EXIT_LIMIT_PER_HOUR}",
-            shadow=SHADOW_MODE, metrics=metrics,
-        ))
-
-    if hours_since_win > NO_WIN_ALERT_HOURS and exits and open_pos > 0:
-        # Build entry-status string that matches what will actually be written
-        # to commands/kraken_cmd.json this cycle. ALERT must never claim
-        # "entries allowed" while the command file says entry_allowed=false.
-        if regime_mode == "FLAT":
-            _entry_status = f"entries blocked: regime={dominant} FLAT"
-        elif regime_mode == "REDUCE":
-            _entry_status = f"entries blocked: regime={dominant} REDUCE"
-        elif expectancy < EXPECTANCY_FREEZE_THRESHOLD:
-            _entry_status = f"entries blocked: expectancy={expectancy:.2f} < {EXPECTANCY_FREEZE_THRESHOLD}"
-        elif not _hermes_entry:
-            _entry_status = f"entries blocked: Hermes DD override (DD={dd:.1f}%)"
-        else:
-            _entry_status = "entries still allowed"
-        decisions.append(GovernorDecision(
-            ts=now_iso, cycle=cycle, action="ALERT", sleeve="kraken",
-            reason=f"No profitable exit in {hours_since_win:.0f} hours — monitoring ({_entry_status})",
-            shadow=SHADOW_MODE, metrics=metrics,
-        ))
-        # LESSON-008: Do NOT freeze entries here — creates deadlock.
-        # Existing positions can still exit profitably. Blocking new entries
-        # prevents the system from recovering. Alert only, no command override.
-        log.warning("[GOVERNOR] No win in %.0fh — alert raised (no entry freeze, deadlock prevention)",
-                    hours_since_win)
-
-    # Shadow classification (6-level — logged only, no behavior change)
-    if decisions:
-        actions = {d.action for d in decisions}
-        if "FORCE_DEFENSE" in actions or "FREEZE_ENTRIES" in actions:
-            _cls = "BLOCK"
-        elif "ALERT_FREEZE" in actions:
-            _cls = "BLOCK"
-        elif "HERMES_DD_OVERRIDE" in actions:
-            _cls = "OVERRIDE"
-        elif "REDUCE_EXPOSURE" in actions:
-            _cls = "REDUCE"
-        elif "TRADE_ACTIVE" in actions and expectancy < -0.5:
-            _cls = "DELAY"
-        elif "TRADE_ACTIVE" in actions:
-            _cls = "ALLOW"
-        elif hours_since_win > 48 or dd < -10:
-            _cls = "ESCALATE"
-        else:
-            _cls = "REDUCE"
-        decisions[0].classification = _cls
-
-    return decisions
+# evaluate_kraken() REMOVED — enzobot retired/de-wired (D-063). Was the Kraken-sleeve evaluator
+# (~245 lines: soft-retire/DEFENSE/SCOUT/NORMAL posture logic + kraken_cmd writes). 0 callers.
 
 
 def evaluate_sfm(sfm_state: dict, cycle: int, supervisor_regime: str,
@@ -1325,16 +1015,14 @@ def run_governor(cycle: int) -> List[GovernorDecision]:
     _strat_ts = _strategic.get("_meta", {}).get("ts", "")
     _strat_age_h = (time.time() - _parse_ts(_strat_ts)) / 3600 if _strat_ts else 999
     if _strategic and _strat_age_h < 14:
-        _k_dir = _strategic.get("kraken_directive", {})
-        _a_dir = _strategic.get("alpaca_directive", {})  # sfm_directive dropped — de-wired (D-038)
+        _a_dir = _strategic.get("alpaca_directive", {})  # kraken_directive dropped — enzobot retired (D-063); sfm — D-038
         _posture_map = {"AGGRESSIVE": 1.2, "MODERATE": 0.8, "DEFENSIVE": 0.4, "HOLD": 1.0}
-        for _sleeve_key, _dir in [("kraken", _k_dir), ("alpaca", _a_dir)]:
+        for _sleeve_key, _dir in [("alpaca", _a_dir)]:
             _posture = _dir.get("posture", "HOLD")
             _mult = _posture_map.get(_posture, 1.0)
             _hermes_advisory.setdefault(_sleeve_key, {})["strategic_size_mult"] = _mult
-        log.info("[GOVERNOR] Strategic directive loaded (age=%.1fh): K=%s A=%s",
-                 _strat_age_h,
-                 _k_dir.get("posture", "?"), _a_dir.get("posture", "?"))
+        log.info("[GOVERNOR] Strategic directive loaded (age=%.1fh): A=%s",
+                 _strat_age_h, _a_dir.get("posture", "?"))
 
     # AUTHORITATIVE regime: Governor classifies from per-pair data (most granular).
     # Brain uses macro regime (RISK_ON/OFF) for advisory only — governor overrides.
@@ -1355,40 +1043,18 @@ def run_governor(cycle: int) -> List[GovernorDecision]:
     # name -- this remains the crypto-universe regime.
     dominant_regime = crypto_regime
 
-    # Read recent exits for Kraken
-    kraken_exits = _read_recent_exits("kraken")
-
     # Evaluate each sleeve with regime context.
-    #   Kraken  -> crypto_regime (its own pair_regime)
-    #   SFM     -> crypto_regime (also crypto sleeve)
-    #   Alpaca  -> stock_regime  (stock pair_regime; ISSUE-013 F1 decoupling)
-    all_decisions.extend(evaluate_kraken(enzo, kraken_exits, cycle, _hermes_advisory))
-    # evaluate_sfm REMOVED — sfm retired/de-wired (D-038): no sfm decision, no sfm_cmd, no EFFECTIVE entry
+    # Kraken SLEEVE evaluation REMOVED — enzobot retired/de-wired (D-063). The Kraken account is now a
+    # regime MONITOR only (feeds crypto_regime to zerobot + kraken_state_truth); it no longer trades.
+    # evaluate_sfm REMOVED — sfm retired/de-wired (D-038)
     all_decisions.extend(evaluate_alpaca(alpaca, cycle, stock_regime, _hermes_advisory))
     # ZeroBot: paper Donchian-20 BTC sleeve. Uses crypto_regime (BTC-driven)
     # but the strategy's own SMA-50 macro filter is the primary gate (per L-009/spec §7.3).
     all_decisions.extend(evaluate_zerobot(zerobot, cycle, crypto_regime, _hermes_advisory))
     # driftbot evaluation REMOVED — retired/de-wired (D-062)
 
-    # ── Cross-sleeve correlation guard ─────────────────────────────────
-    # If both crypto sleeves (Kraken + SFM) are >70% deployed AND BTC dropped
-    # >3% in last hour, force both to 50% size to reduce correlated exposure.
-    _k_deploy = enzo.get("portfolio", {}).get("deployed_pct", 0)
-    _s_deploy = 100.0 if sfm.get("open_position") else 0.0
-    _btc_1h = enzo.get("btc_1h_pct", 0)
-    if _k_deploy > 70 and _s_deploy > 70 and _btc_1h < -3.0:
-        now_iso = datetime.now(timezone.utc).isoformat()
-        log.warning("[GOVERNOR] CORRELATION GUARD: both crypto sleeves >70%% deployed "
-                    "AND BTC -%s%% in 1h — reducing to 50%% size", abs(_btc_1h))
-        for _sleeve, _cmd_path in [("kraken", CMD_KRAKEN)]:  # sfm removed — de-wired (D-038)
-            _write_command_file(_cmd_path, "SCOUT", 0.5, True,
-                                f"Governor: correlation guard — BTC {_btc_1h:.1f}% 1h, both crypto >70% deployed",
-                                _sleeve)
-        all_decisions.append(GovernorDecision(
-            ts=now_iso, cycle=cycle, action="CORRELATION_GUARD", sleeve="kraken",
-            reason=f"BTC {_btc_1h:.1f}% 1h, both >70% deployed — reduced to 50% size",
-            shadow=SHADOW_MODE, metrics={},
-        ))
+    # Cross-sleeve correlation guard REMOVED — both crypto sleeves it guarded were kraken(enzobot)+sfm,
+    # both retired/de-wired (D-063/D-038). No crypto trading sleeves remain to correlate.
 
     # ── Universe DD circuit breaker ──────────────────────────────────
     # If total universe equity drops >5% in any 4h window, all sleeves go DEFENSE.
@@ -1409,7 +1075,7 @@ def run_governor(cycle: int) -> List[GovernorDecision]:
                 now_iso = datetime.now(timezone.utc).isoformat()
                 log.warning("[GOVERNOR] UNIVERSE CIRCUIT BREAKER: equity dropped %.1f%% "
                             "in 4h ($%.2f -> $%.2f) — ALL DEFENSE", _uni_dd_4h, _oldest_eq, _total_eq_now)
-                for _sleeve, _cmd_path in [("kraken", CMD_KRAKEN), ("alpaca", CMD_ALPACA), ("zerobot", CMD_ZEROBOT)]:  # sfm removed — de-wired (D-038)
+                for _sleeve, _cmd_path in [("alpaca", CMD_ALPACA), ("zerobot", CMD_ZEROBOT)]:  # kraken removed — enzobot retired (D-063); sfm — D-038
                     _write_command_file(_cmd_path, "DEFENSE", 0.0, False,
                                         f"Governor: universe circuit breaker — {_uni_dd_4h:.1f}% in 4h",
                                         _sleeve, force_flatten=False)
@@ -1434,23 +1100,16 @@ def run_governor(cycle: int) -> List[GovernorDecision]:
     _eff_str = " | ".join(f"{s}={a}" for s, a in sorted(_effective.items()))
     log.info("[GOVERNOR] EFFECTIVE: %s", _eff_str)
 
-    # Feedback loop: score the previous posture period
-    _total_equity = enzo.get("equity", 0) + sfm.get("equity", 0) + alpaca.get("equity", 0)
-    _dominant_posture = _effective.get("kraken", "UNKNOWN")
-    _outcome = _score_posture_outcome(_total_equity, _dominant_posture)
-    if _outcome:
-        log.info("[GOVERNOR] POSTURE SCORED: %s for %dm -> %s ($%+.2f)",
-                 _outcome["posture"], _outcome["duration_min"],
-                 _outcome["verdict"], _outcome["equity_delta"])
+    # Posture-scoring feedback loop REMOVED — it scored the kraken sleeve posture and fed
+    # _adjust_regime_threshold (enzobot regime tuning); both retired with enzobot (D-063).
 
-    # Write universe brief for Opus 12h review
+    # Write universe brief for Opus 12h review (kraken arg = account-monitor data)
     _write_universe_brief(all_decisions, enzo, sfm, alpaca, dominant_regime, _brain_note)
 
-    # Write Kraken single source of truth
+    # Write Kraken single source of truth — the crypto regime that governs zerobot's kernel check.
+    # Re-homed (D-063): `enzo` now holds the kraken_account_monitor's regime, not enzobot's.
     _write_kraken_truth(enzo, all_decisions, dominant_regime)
-
-    # Adaptive feedback: adjust Kraken regime duration based on posture outcomes
-    _adjust_regime_threshold()
+    # _adjust_regime_threshold() REMOVED — tuned enzobot via kraken_cmd; enzobot retired (D-063)
 
     _last_governor_ts = time.time()
     return all_decisions

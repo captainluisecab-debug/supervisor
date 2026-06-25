@@ -234,8 +234,9 @@ def read_zerobot() -> SleeveState:
 
 def build_portfolio(peak_equity: float = 0.0) -> PortfolioState:
     sleeves = {
-        "kraken_crypto": read_enzobot(),
-        # sfm_tactical REMOVED — retired D-038, de-wired from supervisor (D-038 cleanup)
+        # "kraken_crypto" (enzobot) REMOVED — retired/de-wired (D-063); the Kraken account is now a
+        # regime monitor (kraken_account_monitor), not a portfolio sleeve. read_enzobot() now dead.
+        # sfm_tactical REMOVED — retired D-038
         "alpaca_stocks": read_alpacabot(),
         "zerobot_btc":   read_zerobot(),
         # "driftbot_btc" REMOVED — retired/de-wired (D-062)

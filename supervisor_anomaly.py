@@ -30,9 +30,8 @@ ALPACA_DIR     = r"C:\Projects\alpacabot"
 SUPERVISOR_DIR = os.path.dirname(os.path.abspath(__file__))
 
 LOCK_FILES = [
-    os.path.join(ENZOBOT_DIR,  "enzobot.lock"),
-    # sfmbot.lock REMOVED — sfm retired/de-wired (D-038): a stale lock from the stopped
-    # service would otherwise trip STALE_LOCK_FILE HIGH every cycle.
+    # enzobot.lock REMOVED — enzobot retired/de-wired (D-063); sfmbot.lock REMOVED — D-038.
+    # (A stale lock from a stopped service would otherwise trip STALE_LOCK_FILE every cycle.)
     os.path.join(ALPACA_DIR,   "alpacabot.lock"),
 ]
 
@@ -345,21 +344,13 @@ class AnomalyDetector:
 
         anomalies: List[Anomaly] = []
 
-        enzobot     = self._enzobot_state()
-        brain_state = self._enzobot_brain_state()
-        policy      = self._enzobot_policy()
-        # sfm state read REMOVED — retired/de-wired (D-038)
+        # enzobot anomaly checks REMOVED — enzobot retired/de-wired (D-063): no enzobot state/brain/
+        # policy/log reads; kills ATTACK_DD_TOO_TIGHT, BRAIN_CHURN, entry-drought, adx-block, frozen-cycle
+        # (this is D-064-#1, delivered by the enzobot removal). sfm read REMOVED — D-038.
         alpaca      = self._alpaca_state()
-        log_tail    = self._read_enzobot_log_tail()
 
-        # Run all checks
+        # Run all checks (alpaca only; enzobot + sfm sleeves retired)
         checks = [
-            self._check_entry_drought(enzobot),
-            self._check_adx_blocking(log_tail),
-            self._check_attack_dd_blocked(enzobot, policy),
-            self._check_brain_churn(brain_state),
-            self._check_frozen_cycle(enzobot, "enzobot"),
-            # sfm frozen-cycle check REMOVED — retired/de-wired (D-038)
             self._check_frozen_cycle(alpaca, "alpaca"),
         ]
 
