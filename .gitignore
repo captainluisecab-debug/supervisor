@@ -3,8 +3,10 @@
 .env.*
 
 # Backups — code .bak clutter + CREDENTIAL-bearing .env.bak (NEVER push live keys)
+# NOTE: dash-suffixed variants (e.g. *.py.bak-D038-...) need the catch-all *.bak*
 *.bak
 *.bak.*
+*.bak*
 .env.bak.*
 
 supervisor_report.json
